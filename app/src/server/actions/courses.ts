@@ -1,0 +1,78 @@
+"use server";
+
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import { checkPermission } from "@/lib/permissions";
+
+export type ActionState = { error: string } | undefined;
+
+const CourseSchema = z.object({
+  title: z.string().min(1, { error: "Bezeichnung ist erforderlich." }),
+  description: z.string().optional(),
+  leadTrainerId: z.string().min(1, { error: "Bitte einen Trainer wählen." }),
+  participantLimit: z.coerce.number().int().min(1),
+  trialPossible: z.coerce.boolean(),
+  trialDate: z.coerce.date().optional().nullable(),
+  locationIds: z.array(z.string()).min(1, { error: "Bitte mindestens einen Standort wählen." }),
+});
+
+function parse(formData: FormData) {
+  return CourseSchema.safeParse({
+    title: formData.get("title"),
+    description: formData.get("description") || undefined,
+    leadTrainerId: formData.get("leadTrainerId"),
+    participantLimit: formData.get("participantLimit"),
+    trialPossible: formData.get("trialPossible") === "yes",
+    trialDate: formData.get("trialDate") || null,
+    locationIds: formData.getAll("locationIds"),
+  });
+}
+
+export async function createCourse(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const permError = await checkPermission("permCalendar");
+  if (permError) return permError;
+  const validated = parse(formData);
+  if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
+
+  const { locationIds, ...rest } = validated.data;
+  await prisma.course.create({
+    data: { ...rest, locations: { connect: locationIds.map((id) => ({ id })) } },
+  });
+  revalidatePath("/courses");
+}
+
+export async function updateCourse(
+  id: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const permError = await checkPermission("permCalendar");
+  if (permError) return permError;
+  const validated = parse(formData);
+  if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
+
+  const { locationIds, ...rest } = validated.data;
+  await prisma.course.update({
+    where: { id },
+    data: { ...rest, locations: { set: locationIds.map((lid) => ({ id: lid })) } },
+  });
+  revalidatePath("/courses");
+}
+
+export async function deleteCourse(id: string): Promise<{ error?: string }> {
+  const permError = await checkPermission("permCalendar");
+  if (permError) return permError;
+  const eventCount = await prisma.calendarEvent.count({ where: { courseId: id } });
+  if (eventCount > 0) {
+    return {
+      error: "Kurs kann nicht gelöscht werden, solange Kalendertermine existieren.",
+    };
+  }
+  await prisma.course.delete({ where: { id } });
+  revalidatePath("/courses");
+  return {};
+}

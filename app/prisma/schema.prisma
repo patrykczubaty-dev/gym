@@ -1,0 +1,345 @@
+// BEEPLUS Datenmodell
+// Enums sind als String-Spalten modelliert (SQLite unterstützt keine nativen Enums);
+// erlaubte Werte sind in src/lib/enums.ts als zod-Enums definiert und dort dokumentiert.
+// Geldbeträge sind Int in Cent (kein Float, robust unabhängig von der DB).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  city      String
+  street    String
+  zip       String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customers      Customer[]
+  employees      Employee[]
+  courses        Course[]        @relation("CourseLocations")
+  events         Event[]         @relation("EventLocations")
+  calendarEvents CalendarEvent[]
+  trials         Trial[]
+  news           News[]          @relation("NewsLocations")
+}
+
+model Employee {
+  id            String    @id @default(cuid())
+  firstName     String
+  lastName      String
+  gender        String // Gender: w | m
+  birthday      DateTime
+  employeeSince DateTime
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  street        String?
+  zip           String?
+  city          String?
+  email         String    @unique
+  phone         String?
+  mobile        String?
+  notes         String?
+  photoUrl      String?
+
+  // Login
+  passwordHash String
+  canLogin     Boolean @default(true)
+
+  // Passwort-Vergessen
+  passwordResetToken     String?   @unique
+  passwordResetExpiresAt DateTime?
+
+  // Bankkonto / Gehalt
+  bankName        String?
+  iban            String?
+  bic             String?
+  salaryCents     Int?
+  paymentSchedule String? // PaymentSchedule: FIRST_OF_MONTH | FIFTEENTH_OF_MONTH
+
+  // Berechtigungen (permAdmin übertrumpft/beinhaltet alle anderen)
+  permAdmin          Boolean @default(false)
+  permCalendar       Boolean @default(false)
+  permTrials         Boolean @default(false)
+  permVouchers       Boolean @default(false)
+  permEmployees      Boolean @default(false)
+  permCustomers      Boolean @default(false)
+  permSepa           Boolean @default(false)
+  permEmailTemplates Boolean @default(false)
+  permNews           Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payouts     EmployeePayout[]
+  leadCourses Course[]
+}
+
+model EmployeePayout {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  amountCents Int
+  date        DateTime
+  status      String // PaymentStatus: OPEN | DONE
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String
+  gender      String // Gender: w | m
+  birthday    DateTime
+  street      String?
+  houseNumber String?
+  zip         String?
+  city        String?
+  email       String?
+  phone       String?
+  mobile      String?
+  notes       String?
+  photoUrl    String?
+
+  status       String // CustomerStatus: ACTIVE | PAUSED | INACTIVE
+  contractType String // ContractType: VOUCHER | CONTRACT | TRIAL
+  locationId   String
+  location     Location @relation(fields: [locationId], references: [id])
+  joinedAt     DateTime // Eintrittsdatum / "Beigetreten am"
+
+  originTrialId String?
+  originTrial   Trial?  @relation(fields: [originTrialId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bankAccount CustomerBankAccount?
+  sepaDebits  SepaDebit[]
+  contract    ContractDetail?
+  voucher     VoucherAssignment?
+  bookings    Booking[]
+}
+
+model CustomerBankAccount {
+  id                    String   @id @default(cuid())
+  customerId            String   @unique
+  customer              Customer @relation(fields: [customerId], references: [id])
+  bankName              String?
+  iban                  String?
+  bic                   String?
+  directDebitAuthorized Boolean  @default(false)
+  mandatePdfUrl         String?
+}
+
+model SepaDebit {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  amountCents Int
+  bookingDate DateTime
+  status      String // PaymentStatus: OPEN | DONE
+}
+
+// Vertragsart (Mitgliedschafts-Plan) — pflegbar, definiert u.a. die max. Anzahl
+// Kursbuchungen pro Woche. weeklyLimit == null bedeutet Flatrate (unbegrenzt).
+model ContractPlan {
+  id         String  @id @default(cuid())
+  name       String
+  weeklyLimit Int?
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts ContractDetail[]
+}
+
+// Rohdaten + on-write neuberechnete Ergebnisse aus lib/core/cancellation.ts
+model ContractDetail {
+  id         String   @id @default(cuid())
+  customerId String   @unique
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  planId String
+  plan   ContractPlan @relation(fields: [planId], references: [id])
+
+  termMonths         Int // Laufzeit
+  autoRenewalMonths  Int // aut. Verlängerung (Snapshot aus Settings bei Vertragsabschluss)
+  noticePeriodMonths Int // Kündigungsfrist (Snapshot aus Settings)
+  feeCents           Int // Beitrag
+  debitOption        String // DebitOption: MONTHLY | WEEKLY
+
+  pausedFrom             DateTime?
+  pausedTo               DateTime?
+  cancellationReceivedAt DateTime?
+
+  // Berechnete Werte (aus calculateContractCancellation)
+  contractEndDate            DateTime
+  cancellationPossibleUntil  DateTime
+  cancellationEffectiveAt    DateTime
+  autoRenewed                Boolean   @default(false)
+
+  updatedAt DateTime @updatedAt
+}
+
+model VoucherType {
+  id             String  @id @default(cuid())
+  label          String // z.B. "10er Karte"
+  validityMonths Int
+  sessionCount   Int
+  priceCents     Int     @default(0)
+  notes          String?
+
+  assignments VoucherAssignment[]
+}
+
+model VoucherAssignment {
+  id                String      @id @default(cuid())
+  customerId        String      @unique
+  customer          Customer    @relation(fields: [customerId], references: [id])
+  voucherTypeId     String
+  voucherType       VoucherType @relation(fields: [voucherTypeId], references: [id])
+  assignedAt        DateTime
+  validUntil        DateTime
+  remainingSessions Int
+}
+
+model Course {
+  id               String    @id @default(cuid())
+  title            String
+  description      String? // Kurzbeschreibung
+  leadTrainerId    String
+  leadTrainer      Employee  @relation(fields: [leadTrainerId], references: [id])
+  participantLimit Int
+  trialPossible    Boolean   @default(false)
+  trialDate        DateTime?
+
+  locations          Location[]           @relation("CourseLocations")
+  calendarEvents     CalendarEvent[]
+  trialProposedSlots TrialProposedSlot[]
+}
+
+// Einmalige Veranstaltungen (z.B. Tag der offenen Tür, Wettkampf) - im
+// Unterschied zu Course nicht an einen Trainer gebunden und nicht für
+// Probetrainings vorgesehen, aber ebenfalls im Kalender terminierbar.
+model Event {
+  id               String  @id @default(cuid())
+  title            String
+  description      String? // Kurzbeschreibung
+  participantLimit Int
+
+  locations      Location[]      @relation("EventLocations")
+  calendarEvents CalendarEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id         String   @id @default(cuid())
+  // Genau eines von courseId/eventId ist gesetzt (in den Server Actions
+  // validiert - SQLite unterstützt hier keine deklarative CHECK-Constraint
+  // über Prisma).
+  courseId   String?
+  course     Course?  @relation(fields: [courseId], references: [id])
+  eventId    String?
+  event      Event?   @relation(fields: [eventId], references: [id])
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  startsAt   DateTime
+  endsAt     DateTime
+  capacity   Int
+
+  // Gruppiert Termine, die aus einer wöchentlich wiederkehrenden Serie
+  // generiert wurden (für späteres serienweites Bearbeiten/Löschen).
+  seriesId String?
+
+  bookings Booking[]
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  calendarEventId  String
+  calendarEvent    CalendarEvent @relation(fields: [calendarEventId], references: [id])
+  customerId       String
+  customer         Customer      @relation(fields: [customerId], references: [id])
+  status           String // BookingStatus: BOOKED | WAITLISTED | CANCELLED
+  waitlistPosition Int?
+  createdAt        DateTime      @default(now())
+}
+
+model Trial {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  phone      String?
+  email      String?
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  message    String?
+  status     String // TrialStatus: OPEN | PROPOSED | ACCEPTED | DECLINED
+  createdAt  DateTime @default(now())
+
+  proposedSlots      TrialProposedSlot[]
+  convertedCustomers Customer[]
+}
+
+model TrialProposedSlot {
+  id          String    @id @default(cuid())
+  trialId     String
+  trial       Trial     @relation(fields: [trialId], references: [id])
+  startsAt    DateTime
+  courseId    String?
+  course      Course?   @relation(fields: [courseId], references: [id])
+  token       String    @unique
+  response    String    @default("PENDING") // TrialSlotResponse: PENDING | ACCEPTED | DECLINED
+  respondedAt DateTime?
+}
+
+model News {
+  id                String   @id @default(cuid())
+  subject           String
+  message           String
+  sentAt            DateTime?
+  status             String // NewsStatus: SENT | DRAFT | ARCHIVED
+  publishOnWebsite   Boolean  @default(false)
+  publishOnFacebook  Boolean  @default(false)
+  publishOnInstagram Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  locations   Location[]       @relation("NewsLocations")
+  attachments NewsAttachment[]
+}
+
+model NewsAttachment {
+  id       String @id @default(cuid())
+  newsId   String
+  news     News   @relation(fields: [newsId], references: [id])
+  fileName String
+  url      String
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  category  String // EmailTemplateCategory: PERSON | CALENDAR | BILLING
+  label     String
+  body      String // Text mit Platzhaltern, z.B. {{Vorname}}
+  updatedAt DateTime @updatedAt
+}
+
+model Settings {
+  id                        Int @id @default(1)
+  defaultNoticePeriodMonths Int @default(3)
+  defaultAutoRenewalMonths  Int @default(3)
+
+  // Social-Media-API-Zugangsdaten (Verwendung: News-Veröffentlichung, siehe Systeme-Seite)
+  facebookPageId             String?
+  facebookAccessToken        String?
+  instagramBusinessAccountId String?
+  instagramAccessToken       String?
+}
