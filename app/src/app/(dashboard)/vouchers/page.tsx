@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -13,9 +14,10 @@ import { VouchersNav } from "@/components/vouchers/vouchers-nav";
 import { formatCents } from "@/lib/money";
 
 export default async function VouchersPage() {
-  const voucherTypes = await prisma.voucherType.findMany({
-    orderBy: { sessionCount: "asc" },
-  });
+  const { gymId } = await getCurrentEmployee();
+  const voucherTypes = await withGymScope(gymId, (db) =>
+    db.voucherType.findMany({ orderBy: { sessionCount: "asc" } }),
+  );
 
   return (
     <div className="space-y-4">

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { verifySession } from "@/lib/dal";
 
 export type ActionState = { error: string } | undefined;
@@ -24,17 +24,20 @@ export async function changePassword(
   });
   if (!validated.success) return { error: "Bitte beide Felder ausfüllen (mind. 6 Zeichen)." };
 
-  const employee = await prisma.employee.findUniqueOrThrow({
-    where: { id: session.employeeId },
+  const result = await withGymScope(session.gymId, async (db) => {
+    const employee = await db.employee.findUniqueOrThrow({
+      where: { id: session.employeeId },
+    });
+
+    const matches = await bcrypt.compare(validated.data.currentPassword, employee.passwordHash);
+    if (!matches) return { error: "Aktuelles Passwort ist falsch." };
+
+    await db.employee.update({
+      where: { id: employee.id },
+      data: { passwordHash: bcrypt.hashSync(validated.data.newPassword, 10) },
+    });
+    return undefined;
   });
 
-  const matches = await bcrypt.compare(validated.data.currentPassword, employee.passwordHash);
-  if (!matches) return { error: "Aktuelles Passwort ist falsch." };
-
-  await prisma.employee.update({
-    where: { id: employee.id },
-    data: { passwordHash: bcrypt.hashSync(validated.data.newPassword, 10) },
-  });
-
-  return undefined;
+  return result;
 }

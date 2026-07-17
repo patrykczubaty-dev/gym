@@ -33,7 +33,7 @@ export function SettingsForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="defaultAutoRenewalMonths">
-            Standard-aut.-Verlängerung (Monate)
+            Standardmäßige automatische Verlängerung (Monate)
           </Label>
           <Input
             id="defaultAutoRenewalMonths"

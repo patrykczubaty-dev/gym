@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -11,10 +12,13 @@ import { LocationDialog } from "@/components/locations/location-dialog";
 import { DeleteLocationButton } from "@/components/locations/delete-location-button";
 
 export default async function LocationsPage() {
-  const locations = await prisma.location.findMany({
-    orderBy: { city: "asc" },
-    include: { _count: { select: { customers: true } } },
-  });
+  const { gymId } = await getCurrentEmployee();
+  const locations = await withGymScope(gymId, (db) =>
+    db.location.findMany({
+      orderBy: { city: "asc" },
+      include: { _count: { select: { customers: true } } },
+    }),
+  );
 
   return (
     <div className="space-y-4">

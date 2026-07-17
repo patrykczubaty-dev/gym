@@ -9,7 +9,10 @@ export default defineConfig({
     path: "prisma/migrations",
     seed: "tsx prisma/seed.ts",
   },
+  // Migrationen laufen ueber den privilegierten DB-Owner (DDL-Rechte,
+  // RLS-Bypass fuers Seeding) - nicht ueber den eingeschraenkten Laufzeit-
+  // Benutzer aus DATABASE_URL (siehe src/lib/prisma.ts).
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_DATABASE_URL"],
   },
 });

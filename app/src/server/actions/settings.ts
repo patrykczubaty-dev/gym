@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { verifySession } from "@/lib/dal";
 import { getCurrentEmployee } from "@/lib/dal";
 import { requirePermission } from "@/lib/permissions";
@@ -32,11 +32,13 @@ export async function updateSettings(
   });
   if (!validated.success) return { error: "Bitte die Werte prüfen." };
 
-  await prisma.settings.upsert({
-    where: { id: 1 },
-    create: { id: 1, ...validated.data },
-    update: validated.data,
-  });
+  await withGymScope(employee.gymId, (db) =>
+    db.settings.upsert({
+      where: { gymId: employee.gymId },
+      create: { ...validated.data, gymId: employee.gymId },
+      update: validated.data,
+    }),
+  );
 
   revalidatePath("/settings");
 }
@@ -68,11 +70,13 @@ export async function updateSocialApiSettings(
   });
   if (!validated.success) return { error: "Bitte die Werte prüfen." };
 
-  await prisma.settings.upsert({
-    where: { id: 1 },
-    create: { id: 1, ...validated.data },
-    update: validated.data,
-  });
+  await withGymScope(employee.gymId, (db) =>
+    db.settings.upsert({
+      where: { gymId: employee.gymId },
+      create: { ...validated.data, gymId: employee.gymId },
+      update: validated.data,
+    }),
+  );
 
   revalidatePath("/settings");
 }

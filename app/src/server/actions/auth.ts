@@ -4,7 +4,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { directPrisma } from "@/lib/prisma-direct";
 import { createSession, deleteSession } from "@/lib/session";
 
 const PASSWORD_RESET_VALID_MS = 60 * 60 * 1000; // 1 Stunde
@@ -31,7 +31,9 @@ export async function login(
 
   const { email, password } = validated.data;
 
-  const employee = await prisma.employee.findUnique({ where: { email } });
+  // directPrisma: die gymId des Mitarbeiters ist per Definition noch nicht
+  // bekannt, bevor er gefunden wurde - dieser eine Lookup muss RLS umgehen.
+  const employee = await directPrisma.employee.findUnique({ where: { email } });
 
   if (!employee || !employee.canLogin) {
     return { error: "E-Mail oder Passwort ist falsch." };
@@ -42,7 +44,7 @@ export async function login(
     return { error: "E-Mail oder Passwort ist falsch." };
   }
 
-  await createSession(employee.id);
+  await createSession(employee.id, employee.gymId);
   redirect("/dashboard");
 }
 
@@ -75,7 +77,7 @@ export async function requestPasswordReset(
     return { error: "Bitte eine gültige E-Mail-Adresse angeben." };
   }
 
-  const employee = await prisma.employee.findUnique({
+  const employee = await directPrisma.employee.findUnique({
     where: { email: validated.data.email },
   });
 
@@ -87,7 +89,7 @@ export async function requestPasswordReset(
   }
 
   const token = randomBytes(32).toString("hex");
-  await prisma.employee.update({
+  await directPrisma.employee.update({
     where: { id: employee.id },
     data: {
       passwordResetToken: token,
@@ -123,7 +125,9 @@ export async function resetPassword(
     return { error: validated.error.issues[0]?.message ?? "Bitte Eingaben prüfen." };
   }
 
-  const employee = await prisma.employee.findUnique({ where: { passwordResetToken: token } });
+  const employee = await directPrisma.employee.findUnique({
+    where: { passwordResetToken: token },
+  });
   if (
     !employee ||
     !employee.passwordResetExpiresAt ||
@@ -132,7 +136,7 @@ export async function resetPassword(
     return { error: "Der Link ist ungültig oder abgelaufen. Bitte neu anfordern." };
   }
 
-  await prisma.employee.update({
+  await directPrisma.employee.update({
     where: { id: employee.id },
     data: {
       passwordHash: await bcrypt.hash(validated.data.password, 10),

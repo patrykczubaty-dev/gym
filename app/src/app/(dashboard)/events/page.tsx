@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -11,13 +12,16 @@ import { EventTypeDialog } from "@/components/events/event-type-dialog";
 import { DeleteEventButton } from "@/components/events/delete-event-button";
 
 export default async function EventsPage() {
-  const [events, locations] = await Promise.all([
-    prisma.event.findMany({
-      orderBy: { title: "asc" },
-      include: { locations: true },
-    }),
-    prisma.location.findMany({ orderBy: { city: "asc" } }),
-  ]);
+  const { gymId } = await getCurrentEmployee();
+  const [events, locations] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.event.findMany({
+        orderBy: { title: "asc" },
+        include: { locations: true },
+      }),
+      db.location.findMany({ orderBy: { city: "asc" } }),
+    ]),
+  );
 
   return (
     <div className="space-y-4">

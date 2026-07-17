@@ -153,7 +153,12 @@
   }
   h1,
   h2,
-  h3 {
+  h3,
+  .font-heading {
     @apply font-heading;
+    /* Nur gesetzt, wenn ein Gym eine Akzentfarbe hinterlegt hat (siehe
+       src/lib/branding.ts) - ansonsten bleibt die normale Textfarbe
+       erhalten. */
+    color: var(--heading-color, inherit);
   }
 }

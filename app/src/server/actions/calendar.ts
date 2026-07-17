@@ -4,8 +4,9 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { addYears } from "date-fns";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 import { resolveWaitlistPromotion } from "@/lib/core/waitlist";
 import { getWeeklyOccurrences } from "@/lib/core/recurrence";
 import { isGermanPublicHoliday } from "@/lib/core/holidays";
@@ -49,6 +50,7 @@ export async function createCalendarEvent(
   const permError = await checkPermission("permCalendar");
   if (permError) return permError;
 
+  const { gymId } = await getCurrentEmployee();
   const isWeekly = formData.get("mode") === "weekly";
 
   if (!isWeekly) {
@@ -68,9 +70,18 @@ export async function createCalendarEvent(
     const endsAt = new Date(startsAt);
     endsAt.setHours(startHour + 1, 0, 0, 0);
 
-    await prisma.calendarEvent.create({
-      data: { ...subjectField(subjectType, subjectId), locationId, startsAt, endsAt, capacity },
-    });
+    await withGymScope(gymId, (db) =>
+      db.calendarEvent.create({
+        data: {
+          ...subjectField(subjectType, subjectId),
+          gymId,
+          locationId,
+          startsAt,
+          endsAt,
+          capacity,
+        },
+      }),
+    );
     revalidatePath("/calendar");
     return;
   }
@@ -101,22 +112,25 @@ export async function createCalendarEvent(
   }
 
   const seriesId = randomUUID();
-  await prisma.calendarEvent.createMany({
-    data: occurrences.map((day) => {
-      const startsAt = new Date(day);
-      startsAt.setHours(startHour, 0, 0, 0);
-      const endsAt = new Date(startsAt);
-      endsAt.setHours(startHour + 1, 0, 0, 0);
-      return {
-        ...subjectField(subjectType, subjectId),
-        locationId,
-        startsAt,
-        endsAt,
-        capacity,
-        seriesId,
-      };
+  await withGymScope(gymId, (db) =>
+    db.calendarEvent.createMany({
+      data: occurrences.map((day) => {
+        const startsAt = new Date(day);
+        startsAt.setHours(startHour, 0, 0, 0);
+        const endsAt = new Date(startsAt);
+        endsAt.setHours(startHour + 1, 0, 0, 0);
+        return {
+          ...subjectField(subjectType, subjectId),
+          gymId,
+          locationId,
+          startsAt,
+          endsAt,
+          capacity,
+          seriesId,
+        };
+      }),
     }),
-  });
+  );
 
   revalidatePath("/calendar");
 }
@@ -125,50 +139,51 @@ export async function cancelBooking(bookingId: string): Promise<{ error?: string
   const permError = await checkPermission("permCalendar");
   if (permError) return permError;
 
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    include: {
-      calendarEvent: {
-        include: {
-          bookings: { where: { status: "WAITLISTED" } },
+  const { gymId } = await getCurrentEmployee();
+
+  await withGymScope(gymId, async (db) => {
+    const booking = await db.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        calendarEvent: {
+          include: {
+            bookings: { where: { status: "WAITLISTED" } },
+          },
         },
       },
-    },
-  });
-
-  if (!booking) return { error: "Buchung nicht gefunden." };
-
-  if (booking.status === "WAITLISTED") {
-    await prisma.booking.update({
-      where: { id: bookingId },
-      data: { status: "CANCELLED" },
     });
-    revalidatePath("/calendar");
-    return {};
-  }
 
-  const { promoted, remaining } = resolveWaitlistPromotion(
-    booking.calendarEvent.bookings
-      .filter((b) => b.id !== bookingId)
-      .map((b) => ({ id: b.id, waitlistPosition: b.waitlistPosition ?? 0 })),
-    1,
-  );
+    if (!booking) return;
 
-  await prisma.$transaction([
-    prisma.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED" } }),
-    ...promoted.map((p) =>
-      prisma.booking.update({
+    if (booking.status === "WAITLISTED") {
+      await db.booking.update({
+        where: { id: bookingId },
+        data: { status: "CANCELLED" },
+      });
+      return;
+    }
+
+    const { promoted, remaining } = resolveWaitlistPromotion(
+      booking.calendarEvent.bookings
+        .filter((b) => b.id !== bookingId)
+        .map((b) => ({ id: b.id, waitlistPosition: b.waitlistPosition ?? 0 })),
+      1,
+    );
+
+    await db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED" } });
+    for (const p of promoted) {
+      await db.booking.update({
         where: { id: p.id },
         data: { status: "BOOKED", waitlistPosition: null },
-      }),
-    ),
-    ...remaining.map((r) =>
-      prisma.booking.update({
+      });
+    }
+    for (const r of remaining) {
+      await db.booking.update({
         where: { id: r.id },
         data: { waitlistPosition: r.waitlistPosition },
-      }),
-    ),
-  ]);
+      });
+    }
+  });
 
   revalidatePath("/calendar");
   return {};

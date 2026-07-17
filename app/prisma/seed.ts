@@ -1,9 +1,12 @@
 import bcrypt from "bcryptjs";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { calculateContractCancellation } from "../src/lib/core/cancellation";
 
-const adapter = new PrismaBetterSqlite3({ url: process.env.DATABASE_URL! });
+// Seeding umgeht bewusst RLS (legt Gyms + deren Erststamm-Daten uebergreifend
+// an) und laeuft daher ueber den privilegierten DB-Owner, nicht ueber den
+// eingeschraenkten Laufzeit-Benutzer.
+const adapter = new PrismaPg({ connectionString: process.env.DIRECT_DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 function hash(password: string) {
@@ -17,18 +20,22 @@ function d(year: number, month: number, day: number): Date {
 async function main() {
   console.log("Seeding...");
 
-  await prisma.settings.upsert({
-    where: { id: 1 },
-    update: {},
-    create: { id: 1, defaultNoticePeriodMonths: 3, defaultAutoRenewalMonths: 3 },
+  // --- Gym (Mandant) -----------------------------------------------------
+  const gym = await prisma.gym.create({
+    data: { name: "BEEPLUS Essen/Düsseldorf", slug: "beeplus-essen-duesseldorf" },
+  });
+  const gymId = gym.id;
+
+  await prisma.settings.create({
+    data: { gymId, defaultNoticePeriodMonths: 3, defaultAutoRenewalMonths: 3 },
   });
 
   // --- Standorte -----------------------------------------------------
   const essen = await prisma.location.create({
-    data: { city: "Essen", street: "Kettwiger Str. 12", zip: "45127" },
+    data: { gymId, city: "Essen", street: "Kettwiger Str. 12", zip: "45127" },
   });
   const duesseldorf = await prisma.location.create({
-    data: { city: "Düsseldorf", street: "Königsallee 40", zip: "40212" },
+    data: { gymId, city: "Düsseldorf", street: "Königsallee 40", zip: "40212" },
   });
 
   // --- Mitarbeiter -----------------------------------------------------
@@ -36,6 +43,7 @@ async function main() {
 
   const admin = await prisma.employee.create({
     data: {
+      gymId,
       firstName: "Sandra",
       lastName: "Beck",
       gender: "w",
@@ -56,6 +64,7 @@ async function main() {
 
   const studioleitung = await prisma.employee.create({
     data: {
+      gymId,
       firstName: "Markus",
       lastName: "Vogel",
       gender: "m",
@@ -83,6 +92,7 @@ async function main() {
 
   const trainer = await prisma.employee.create({
     data: {
+      gymId,
       firstName: "Julia",
       lastName: "Krüger",
       gender: "w",
@@ -104,6 +114,7 @@ async function main() {
 
   const rezeption = await prisma.employee.create({
     data: {
+      gymId,
       firstName: "Tom",
       lastName: "Nowak",
       gender: "m",
@@ -119,6 +130,7 @@ async function main() {
 
   const newsRedakteurin = await prisma.employee.create({
     data: {
+      gymId,
       firstName: "Lena",
       lastName: "Schmidt",
       gender: "w",
@@ -138,12 +150,14 @@ async function main() {
     await prisma.employeePayout.createMany({
       data: [
         {
+          gymId,
           employeeId: employee.id,
           amountCents: employee.salaryCents,
           date: d(2026, 6, 1),
           status: "DONE",
         },
         {
+          gymId,
           employeeId: employee.id,
           amountCents: employee.salaryCents,
           date: d(2026, 7, 1),
@@ -156,6 +170,7 @@ async function main() {
   // --- Kurse -----------------------------------------------------
   const yoga = await prisma.course.create({
     data: {
+      gymId,
       title: "Yoga Flow",
       leadTrainerId: trainer.id,
       participantLimit: 12,
@@ -166,6 +181,7 @@ async function main() {
   });
   const crossfit = await prisma.course.create({
     data: {
+      gymId,
       title: "CrossFit Basics",
       leadTrainerId: studioleitung.id,
       participantLimit: 10,
@@ -175,6 +191,7 @@ async function main() {
   });
   const ruecken = await prisma.course.create({
     data: {
+      gymId,
       title: "Rückenfit",
       leadTrainerId: rezeption.id,
       participantLimit: 15,
@@ -185,6 +202,7 @@ async function main() {
   });
   const zumba = await prisma.course.create({
     data: {
+      gymId,
       title: "Zumba",
       leadTrainerId: newsRedakteurin.id,
       participantLimit: 20,
@@ -194,6 +212,7 @@ async function main() {
   });
   const bootcamp = await prisma.course.create({
     data: {
+      gymId,
       title: "Bootcamp",
       leadTrainerId: trainer.id,
       participantLimit: 8,
@@ -205,6 +224,7 @@ async function main() {
   // --- Events -----------------------------------------------------
   const openDay = await prisma.event.create({
     data: {
+      gymId,
       title: "Tag der offenen Tür",
       description: "Schnuppertraining, Studio-Führungen und Ernährungsberatung für alle.",
       participantLimit: 50,
@@ -214,13 +234,13 @@ async function main() {
 
   // --- Vertragsarten -----------------------------------------------------
   const planBasic = await prisma.contractPlan.create({
-    data: { name: "Basic 2x/Woche", weeklyLimit: 2 },
+    data: { gymId, name: "Basic 2x/Woche", weeklyLimit: 2 },
   });
   const planPremium = await prisma.contractPlan.create({
-    data: { name: "Premium 4x/Woche", weeklyLimit: 4 },
+    data: { gymId, name: "Premium 4x/Woche", weeklyLimit: 4 },
   });
   const planFlatrate = await prisma.contractPlan.create({
-    data: { name: "Flatrate", weeklyLimit: null, notes: "Unbegrenzte Kursbesuche." },
+    data: { gymId, name: "Flatrate", weeklyLimit: null, notes: "Unbegrenzte Kursbesuche." },
   });
 
   // --- Kunden -----------------------------------------------------
@@ -258,6 +278,7 @@ async function main() {
 
   const sabine = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Sabine",
       lastName: "Hoffmann",
       gender: "w",
@@ -274,6 +295,7 @@ async function main() {
       joinedAt: fall1Input.joinedAt,
       bankAccount: {
         create: {
+          gymId,
           bankName: "Sparkasse Essen",
           iban: "DE89370400440532013000",
           bic: "COBADEFFXXX",
@@ -282,6 +304,7 @@ async function main() {
       },
       contract: {
         create: {
+          gymId,
           planId: planBasic.id,
           termMonths: fall1Input.termMonths,
           autoRenewalMonths: fall1Input.autoRenewalMonths,
@@ -297,8 +320,8 @@ async function main() {
       },
       sepaDebits: {
         create: [
-          { amountCents: 6500, bookingDate: d(2016, 11, 1), status: "DONE" },
-          { amountCents: 6500, bookingDate: d(2016, 12, 1), status: "DONE" },
+          { gymId, amountCents: 6500, bookingDate: d(2016, 11, 1), status: "DONE" },
+          { gymId, amountCents: 6500, bookingDate: d(2016, 12, 1), status: "DONE" },
         ],
       },
     },
@@ -306,6 +329,7 @@ async function main() {
 
   const ben = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Ben",
       lastName: "Fischer",
       gender: "m",
@@ -322,6 +346,7 @@ async function main() {
       joinedAt: fall2Input.joinedAt,
       bankAccount: {
         create: {
+          gymId,
           bankName: "Deutsche Bank",
           iban: "DE75512108001245126199",
           bic: "DEUTDEDBXXX",
@@ -330,6 +355,7 @@ async function main() {
       },
       contract: {
         create: {
+          gymId,
           planId: planBasic.id,
           termMonths: fall2Input.termMonths,
           autoRenewalMonths: fall2Input.autoRenewalMonths,
@@ -345,8 +371,8 @@ async function main() {
       },
       sepaDebits: {
         create: [
-          { amountCents: 6500, bookingDate: d(2016, 11, 1), status: "DONE" },
-          { amountCents: 6500, bookingDate: d(2017, 1, 1), status: "OPEN" },
+          { gymId, amountCents: 6500, bookingDate: d(2016, 11, 1), status: "DONE" },
+          { gymId, amountCents: 6500, bookingDate: d(2017, 1, 1), status: "OPEN" },
         ],
       },
     },
@@ -354,6 +380,7 @@ async function main() {
 
   const nina = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Nina",
       lastName: "Krause",
       gender: "w",
@@ -370,6 +397,7 @@ async function main() {
       joinedAt: fall3Input.joinedAt,
       bankAccount: {
         create: {
+          gymId,
           bankName: "Postbank",
           iban: "DE02100100100006820101",
           bic: "PBNKDEFF",
@@ -378,6 +406,7 @@ async function main() {
       },
       contract: {
         create: {
+          gymId,
           planId: planPremium.id,
           termMonths: fall3Input.termMonths,
           autoRenewalMonths: fall3Input.autoRenewalMonths,
@@ -405,6 +434,7 @@ async function main() {
   const jonasCalc = calculateContractCancellation(jonasInput);
   const jonas = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Jonas",
       lastName: "Schreiber",
       gender: "m",
@@ -421,6 +451,7 @@ async function main() {
       joinedAt: jonasInput.joinedAt,
       bankAccount: {
         create: {
+          gymId,
           bankName: "ING",
           iban: "DE27100777770209299700",
           bic: "INGDDEFFXXX",
@@ -429,6 +460,7 @@ async function main() {
       },
       contract: {
         create: {
+          gymId,
           planId: planBasic.id,
           termMonths: jonasInput.termMonths,
           autoRenewalMonths: jonasInput.autoRenewalMonths,
@@ -443,8 +475,8 @@ async function main() {
       },
       sepaDebits: {
         create: [
-          { amountCents: 1475, bookingDate: d(2026, 6, 29), status: "DONE" },
-          { amountCents: 1475, bookingDate: d(2026, 7, 6), status: "OPEN" },
+          { gymId, amountCents: 1475, bookingDate: d(2026, 6, 29), status: "DONE" },
+          { gymId, amountCents: 1475, bookingDate: d(2026, 7, 6), status: "OPEN" },
         ],
       },
     },
@@ -460,6 +492,7 @@ async function main() {
   const miraCalc = calculateContractCancellation(miraInput);
   const mira = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Mira",
       lastName: "Albrecht",
       gender: "w",
@@ -476,6 +509,7 @@ async function main() {
       joinedAt: miraInput.joinedAt,
       bankAccount: {
         create: {
+          gymId,
           bankName: "Commerzbank",
           iban: "DE43500400000123456789",
           bic: "COBADEFFXXX",
@@ -484,6 +518,7 @@ async function main() {
       },
       contract: {
         create: {
+          gymId,
           planId: planFlatrate.id,
           termMonths: miraInput.termMonths,
           autoRenewalMonths: miraInput.autoRenewalMonths,
@@ -511,6 +546,7 @@ async function main() {
   const hannahCalc = calculateContractCancellation(hannahInput);
   const hannah = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Hannah",
       lastName: "Braun",
       gender: "w",
@@ -527,6 +563,7 @@ async function main() {
       notes: "Pausiert wegen Schwangerschaft, meldet sich nach Rückkehr.",
       bankAccount: {
         create: {
+          gymId,
           bankName: "Sparkasse Essen",
           iban: "DE56370501980000123456",
           bic: "COKSDE33XXX",
@@ -535,6 +572,7 @@ async function main() {
       },
       contract: {
         create: {
+          gymId,
           planId: planPremium.id,
           termMonths: hannahInput.termMonths,
           autoRenewalMonths: hannahInput.autoRenewalMonths,
@@ -563,6 +601,7 @@ async function main() {
   const erikCalc = calculateContractCancellation(erikInput);
   const erik = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Erik",
       lastName: "Lange",
       gender: "m",
@@ -574,6 +613,7 @@ async function main() {
       joinedAt: erikInput.joinedAt,
       contract: {
         create: {
+          gymId,
           planId: planBasic.id,
           termMonths: erikInput.termMonths,
           autoRenewalMonths: erikInput.autoRenewalMonths,
@@ -600,6 +640,7 @@ async function main() {
   const juliaCalc = calculateContractCancellation(juliaInput);
   const juliaVogt = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Julia",
       lastName: "Vogt",
       gender: "w",
@@ -611,6 +652,7 @@ async function main() {
       joinedAt: juliaInput.joinedAt,
       contract: {
         create: {
+          gymId,
           planId: planBasic.id,
           termMonths: juliaInput.termMonths,
           autoRenewalMonths: juliaInput.autoRenewalMonths,
@@ -629,20 +671,21 @@ async function main() {
 
   // --- Gutscheine -----------------------------------------------------
   const voucher5 = await prisma.voucherType.create({
-    data: { label: "5er Karte", validityMonths: 6, sessionCount: 5, priceCents: 6500 },
+    data: { gymId, label: "5er Karte", validityMonths: 6, sessionCount: 5, priceCents: 6500 },
   });
   const voucher10 = await prisma.voucherType.create({
-    data: { label: "10er Karte", validityMonths: 12, sessionCount: 10, priceCents: 12000 },
+    data: { gymId, label: "10er Karte", validityMonths: 12, sessionCount: 10, priceCents: 12000 },
   });
   const voucher15 = await prisma.voucherType.create({
-    data: { label: "15er Karte", validityMonths: 18, sessionCount: 15, priceCents: 16500 },
+    data: { gymId, label: "15er Karte", validityMonths: 18, sessionCount: 15, priceCents: 16500 },
   });
   await prisma.voucherType.create({
-    data: { label: "20er Karte", validityMonths: 24, sessionCount: 20, priceCents: 20000 },
+    data: { gymId, label: "20er Karte", validityMonths: 24, sessionCount: 20, priceCents: 20000 },
   });
 
   const paul = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Paul",
       lastName: "Weber",
       gender: "m",
@@ -654,6 +697,7 @@ async function main() {
       joinedAt: d(2026, 4, 1),
       voucher: {
         create: {
+          gymId,
           voucherTypeId: voucher10.id,
           assignedAt: d(2026, 4, 1),
           validUntil: d(2027, 4, 1),
@@ -665,6 +709,7 @@ async function main() {
 
   const katrin = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Katrin",
       lastName: "Sommer",
       gender: "w",
@@ -676,6 +721,7 @@ async function main() {
       joinedAt: d(2026, 5, 1),
       voucher: {
         create: {
+          gymId,
           voucherTypeId: voucher5.id,
           assignedAt: d(2026, 5, 1),
           validUntil: d(2026, 11, 1),
@@ -687,6 +733,7 @@ async function main() {
 
   const felix = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "Felix",
       lastName: "Roth",
       gender: "m",
@@ -698,6 +745,7 @@ async function main() {
       joinedAt: d(2026, 2, 1),
       voucher: {
         create: {
+          gymId,
           voucherTypeId: voucher15.id,
           assignedAt: d(2026, 2, 1),
           validUntil: d(2027, 8, 1),
@@ -710,6 +758,7 @@ async function main() {
   // --- Probetrainings -----------------------------------------------------
   await prisma.trial.create({
     data: {
+      gymId,
       firstName: "Sophie",
       lastName: "Ahrens",
       phone: "0201 6667788",
@@ -722,6 +771,7 @@ async function main() {
 
   await prisma.trial.create({
     data: {
+      gymId,
       firstName: "Marco",
       lastName: "Peters",
       phone: "0211 7778899",
@@ -732,6 +782,7 @@ async function main() {
       proposedSlots: {
         create: [
           {
+            gymId,
             startsAt: d(2026, 7, 22),
             courseId: ruecken.id,
             token: "trial-marco-1",
@@ -744,6 +795,7 @@ async function main() {
 
   const trialDavid = await prisma.trial.create({
     data: {
+      gymId,
       firstName: "David",
       lastName: "Krüger",
       phone: "0201 8889900",
@@ -754,6 +806,7 @@ async function main() {
       proposedSlots: {
         create: [
           {
+            gymId,
             startsAt: d(2026, 7, 20),
             courseId: yoga.id,
             token: "trial-david-1",
@@ -767,6 +820,7 @@ async function main() {
 
   const david = await prisma.customer.create({
     data: {
+      gymId,
       firstName: "David",
       lastName: "Krüger",
       gender: "m",
@@ -784,6 +838,7 @@ async function main() {
 
   await prisma.trial.create({
     data: {
+      gymId,
       firstName: "Lisa",
       lastName: "Otten",
       email: "lisa.otten@example.com",
@@ -793,6 +848,7 @@ async function main() {
       proposedSlots: {
         create: [
           {
+            gymId,
             startsAt: d(2026, 7, 15),
             courseId: crossfit.id,
             token: "trial-lisa-1",
@@ -800,6 +856,7 @@ async function main() {
             respondedAt: d(2026, 7, 10),
           },
           {
+            gymId,
             startsAt: d(2026, 7, 18),
             courseId: crossfit.id,
             token: "trial-lisa-2",
@@ -813,6 +870,7 @@ async function main() {
 
   await prisma.trial.create({
     data: {
+      gymId,
       firstName: "Tobias",
       lastName: "Reiter",
       email: "tobias.reiter@example.com",
@@ -862,6 +920,7 @@ async function main() {
     const endsAt = at(e.date, e.hour + 1);
     const event = await prisma.calendarEvent.create({
       data: {
+        gymId,
         courseId: e.course.id,
         locationId: e.location.id,
         startsAt,
@@ -875,6 +934,7 @@ async function main() {
   // Standalone Event-Termin (kein Kurs) - Sonntag der aktuellen Woche.
   await prisma.calendarEvent.create({
     data: {
+      gymId,
       eventId: openDay.id,
       locationId: essen.id,
       startsAt: at(d(2026, 7, 19), 11),
@@ -888,6 +948,7 @@ async function main() {
   // grüner Termin: wenige Buchungen
   await prisma.booking.createMany({
     data: [sabine, ben, nina].map((c) => ({
+      gymId,
       calendarEventId: createdEvents[0].id,
       customerId: c.id,
       status: "BOOKED",
@@ -897,19 +958,21 @@ async function main() {
   // gelber Termin: fast voll (9 von 10 Plätzen)
   await prisma.booking.createMany({
     data: bookingCustomers.slice(0, 8).map((c) => ({
+      gymId,
       calendarEventId: createdEvents[3].id,
       customerId: c.id,
       status: "BOOKED",
     })),
   });
   await prisma.booking.create({
-    data: { calendarEventId: createdEvents[3].id, customerId: jonas.id, status: "BOOKED" },
+    data: { gymId, calendarEventId: createdEvents[3].id, customerId: jonas.id, status: "BOOKED" },
   });
 
   // roter Termin: komplett voll + 2 Personen auf der Warteliste
   await prisma.booking.createMany({
     data: [sabine, ben, nina, jonas, mira, david, hannah, erik, juliaVogt, felix].map(
       (c) => ({
+        gymId,
         calendarEventId: createdEvents[4].id,
         customerId: c.id,
         status: "BOOKED",
@@ -918,6 +981,7 @@ async function main() {
   });
   await prisma.booking.create({
     data: {
+      gymId,
       calendarEventId: createdEvents[4].id,
       customerId: paul.id,
       status: "WAITLISTED",
@@ -926,6 +990,7 @@ async function main() {
   });
   await prisma.booking.create({
     data: {
+      gymId,
       calendarEventId: createdEvents[4].id,
       customerId: katrin.id,
       status: "WAITLISTED",
@@ -936,15 +1001,16 @@ async function main() {
   // ein paar weitere lockere Buchungen zur Auflockerung
   await prisma.booking.createMany({
     data: [
-      { calendarEventId: createdEvents[6].id, customerId: mira.id, status: "BOOKED" },
-      { calendarEventId: createdEvents[6].id, customerId: nina.id, status: "BOOKED" },
-      { calendarEventId: createdEvents[9].id, customerId: felix.id, status: "BOOKED" },
+      { gymId, calendarEventId: createdEvents[6].id, customerId: mira.id, status: "BOOKED" },
+      { gymId, calendarEventId: createdEvents[6].id, customerId: nina.id, status: "BOOKED" },
+      { gymId, calendarEventId: createdEvents[9].id, customerId: felix.id, status: "BOOKED" },
     ],
   });
 
   // --- News -----------------------------------------------------
   await prisma.news.create({
     data: {
+      gymId,
       subject: "Neue Öffnungszeiten ab August",
       message:
         "Liebe Mitglieder, ab dem 1. August gelten in beiden Studios neue Öffnungszeiten...",
@@ -957,6 +1023,7 @@ async function main() {
 
   await prisma.news.create({
     data: {
+      gymId,
       subject: "Sommer-Challenge startet",
       message: "Entwurf: Details zur Sommer-Challenge folgen.",
       status: "DRAFT",
@@ -965,6 +1032,7 @@ async function main() {
 
   await prisma.news.create({
     data: {
+      gymId,
       subject: "Renovierung Standort Essen abgeschlossen",
       message: "Die Renovierungsarbeiten in Essen sind abgeschlossen.",
       status: "ARCHIVED",
@@ -975,6 +1043,7 @@ async function main() {
 
   await prisma.news.create({
     data: {
+      gymId,
       subject: "Neuer Kurs: Bootcamp",
       message: "Ab sofort im Kursplan: Bootcamp, montags und donnerstags um 07:00 Uhr.",
       status: "SENT",
@@ -984,6 +1053,7 @@ async function main() {
       attachments: {
         create: [
           {
+            gymId,
             fileName: "bootcamp-flyer.jpg",
             url: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800",
           },
@@ -996,51 +1066,61 @@ async function main() {
   await prisma.emailTemplate.createMany({
     data: [
       {
+        gymId,
         category: "PERSON",
         label: "Geburtstag",
         body: "Liebe/r {{Vorname}}, das gesamte BEEPLUS-Team wünscht dir alles Gute zum Geburtstag!",
       },
       {
+        gymId,
         category: "PERSON",
         label: "Herausforderung",
         body: "Hallo {{Vorname}}, wir haben eine neue Challenge für dich - bist du dabei?",
       },
       {
+        gymId,
         category: "PERSON",
         label: "Gutschein Ablauf",
         body: "Hallo {{Vorname}}, dein Gutschein läuft bald ab. Nutze deine verbleibenden Einheiten rechtzeitig.",
       },
       {
+        gymId,
         category: "PERSON",
         label: "Gutschein Kurse",
         body: "Hallo {{Vorname}}, dir stehen noch {{Kursanzahl}} Einheiten auf deinem Gutschein zur Verfügung.",
       },
       {
+        gymId,
         category: "PERSON",
         label: "Einladung zum Probetraining",
         body: "Hallo {{Vorname}}, wir laden dich herzlich zu deinem Probetraining am {{Datum}} ein.",
       },
       {
+        gymId,
         category: "CALENDAR",
         label: "Trainingserinnerung",
         body: "Hallo {{Vorname}}, dein Kurs {{Kurs}} beginnt morgen um {{Uhrzeit}} Uhr.",
       },
       {
+        gymId,
         category: "CALENDAR",
         label: "Warteliste (Platz frei)",
         body: "Hallo {{Vorname}}, für den Kurs {{Kurs}} ist ein Platz frei geworden - du bist automatisch angemeldet.",
       },
       {
+        gymId,
         category: "CALENDAR",
         label: "Wir vermissen dich",
         body: "Hallo {{Vorname}}, wir haben dich schon eine Weile nicht mehr im Studio gesehen. Alles in Ordnung?",
       },
       {
+        gymId,
         category: "BILLING",
         label: "Rechnung senden",
         body: "Hallo {{Vorname}}, anbei erhältst du deine Rechnung über {{Betrag}} für den Zeitraum {{Zeitraum}}.",
       },
       {
+        gymId,
         category: "BILLING",
         label: "Mahnung senden",
         body: "Hallo {{Vorname}}, leider konnten wir den Betrag von {{Betrag}} nicht einziehen. Bitte gleiche den Betrag zeitnah aus.",
@@ -1048,9 +1128,21 @@ async function main() {
     ],
   });
 
+  // --- Plattform-Admin -----------------------------------------------------
+  const platformAdmin = await prisma.platformAdmin.create({
+    data: {
+      firstName: "Plattform",
+      lastName: "Admin",
+      email: "platform-admin@beeplus.de",
+      passwordHash: hash("platform-admin"),
+    },
+  });
+
   console.log("Seeding abgeschlossen.");
+  console.log(`Gym: ${gym.name} (${gym.slug})`);
   console.log(`Admin-Login: ${admin.email} / beeplus-admin`);
   console.log(`Weitere Mitarbeiter-Logins: *.@beeplus.de / training123`);
+  console.log(`Plattform-Admin-Login (/platform/login): ${platformAdmin.email} / platform-admin`);
 }
 
 main()

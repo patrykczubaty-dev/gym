@@ -45,3 +45,6 @@ next-env.d.ts
 # sqlite dev database
 /prisma/*.db
 /prisma/*.db-journal
+
+# per-Gym Branding-Uploads (Nutzerinhalt, nicht Teil des Repos)
+/public/uploads/

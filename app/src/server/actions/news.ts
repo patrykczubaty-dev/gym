@@ -2,8 +2,9 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 
 export type ActionState = { error: string } | undefined;
 
@@ -44,17 +45,24 @@ export async function createNews(
     .map((u) => u.trim())
     .filter(Boolean);
 
-  await prisma.news.create({
-    data: {
-      ...rest,
-      status: sendNow ? "SENT" : "DRAFT",
-      sentAt: sendNow ? new Date() : null,
-      locations: { connect: locationIds.map((id) => ({ id })) },
-      attachments: {
-        create: urls.map((url) => ({ fileName: url.split("/").pop() ?? url, url })),
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.news.create({
+      data: {
+        ...rest,
+        gymId,
+        status: sendNow ? "SENT" : "DRAFT",
+        sentAt: sendNow ? new Date() : null,
+        locations: { connect: locationIds.map((id) => ({ id })) },
+        attachments: {
+          // gymId muss hier manuell mit, da die scoped-prisma-Extension nur
+          // Top-Level-Operationen abfaengt, nicht verschachtelte Writes
+          // innerhalb desselben create()-Aufrufs (siehe scoped-prisma.ts).
+          create: urls.map((url) => ({ gymId, fileName: url.split("/").pop() ?? url, url })),
+        },
       },
-    },
-  });
+    }),
+  );
 
   revalidatePath("/news");
 }
@@ -62,7 +70,10 @@ export async function createNews(
 export async function archiveNews(id: string): Promise<{ error?: string }> {
   const permError = await checkPermission("permNews");
   if (permError) return permError;
-  await prisma.news.update({ where: { id }, data: { status: "ARCHIVED" } });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.news.update({ where: { id }, data: { status: "ARCHIVED" } }),
+  );
   revalidatePath("/news");
   return {};
 }
@@ -70,10 +81,13 @@ export async function archiveNews(id: string): Promise<{ error?: string }> {
 export async function sendNews(id: string): Promise<{ error?: string }> {
   const permError = await checkPermission("permNews");
   if (permError) return permError;
-  await prisma.news.update({
-    where: { id },
-    data: { status: "SENT", sentAt: new Date() },
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.news.update({
+      where: { id },
+      data: { status: "SENT", sentAt: new Date() },
+    }),
+  );
   revalidatePath("/news");
   return {};
 }

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Tabs,
   TabsContent,
@@ -38,22 +39,25 @@ export default async function CustomerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { gymId } = await getCurrentEmployee();
 
-  const [customer, locations, voucherTypes, contractPlans] = await Promise.all([
-    prisma.customer.findUnique({
-      where: { id },
-      include: {
-        location: true,
-        bankAccount: true,
-        contract: true,
-        voucher: { include: { voucherType: true } },
-        sepaDebits: { orderBy: { bookingDate: "desc" } },
-      },
-    }),
-    prisma.location.findMany({ orderBy: { city: "asc" } }),
-    prisma.voucherType.findMany({ orderBy: { sessionCount: "asc" } }),
-    prisma.contractPlan.findMany({ orderBy: { createdAt: "asc" } }),
-  ]);
+  const [customer, locations, voucherTypes, contractPlans] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.customer.findUnique({
+        where: { id },
+        include: {
+          location: true,
+          bankAccount: true,
+          contract: true,
+          voucher: { include: { voucherType: true } },
+          sepaDebits: { orderBy: { bookingDate: "desc" } },
+        },
+      }),
+      db.location.findMany({ orderBy: { city: "asc" } }),
+      db.voucherType.findMany({ orderBy: { sessionCount: "asc" } }),
+      db.contractPlan.findMany({ orderBy: { createdAt: "asc" } }),
+    ]),
+  );
 
   if (!customer) notFound();
 
@@ -109,7 +113,7 @@ export default async function CustomerDetailPage({
             <TabsTrigger value="foto">Foto</TabsTrigger>
             {isContract && <TabsTrigger value="bankkonto">Bankkonto</TabsTrigger>}
             {isContract && <TabsTrigger value="sepa">SEPA-Lastschrift(en)</TabsTrigger>}
-            {isContract && <TabsTrigger value="vertrag">Vertragdetails</TabsTrigger>}
+            {isContract && <TabsTrigger value="vertrag">Vertragsdetails</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="person" className="space-y-4">

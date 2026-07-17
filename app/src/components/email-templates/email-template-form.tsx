@@ -29,9 +29,6 @@ export function EmailTemplateForm({
         </Button>
       </div>
       <Textarea id={`body-${id}`} name="body" defaultValue={body} rows={3} />
-      <p className="text-xs text-muted-foreground">
-        Variablen wie <code>{"{{Vorname}}"}</code> werden beim Versenden automatisch ersetzt.
-      </p>
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
     </form>
   );

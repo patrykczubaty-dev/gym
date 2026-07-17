@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -11,7 +12,10 @@ import { ContractPlanDialog } from "@/components/contract-plans/contract-plan-di
 import { DeleteContractPlanButton } from "@/components/contract-plans/delete-contract-plan-button";
 
 export default async function ContractPlansPage() {
-  const plans = await prisma.contractPlan.findMany({ orderBy: { createdAt: "asc" } });
+  const { gymId } = await getCurrentEmployee();
+  const plans = await withGymScope(gymId, (db) =>
+    db.contractPlan.findMany({ orderBy: { createdAt: "asc" } }),
+  );
 
   return (
     <div className="space-y-4">

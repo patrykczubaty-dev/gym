@@ -3,8 +3,9 @@
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 
 export type ActionState = { error: string } | undefined;
 
@@ -35,8 +36,67 @@ export async function createTrial(
 
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
-  await prisma.trial.create({ data: { ...validated.data, status: "OPEN" } });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.trial.create({ data: { ...validated.data, gymId, status: "OPEN" } }),
+  );
   revalidatePath("/trials");
+}
+
+const TrialStatusEnum = z.enum(["OPEN", "PROPOSED", "ACCEPTED", "DECLINED"]);
+
+const UpdateTrialSchema = TrialSchema.extend({
+  status: TrialStatusEnum,
+});
+
+export async function updateTrial(
+  id: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const permError = await checkPermission("permTrials");
+  if (permError) return permError;
+
+  const validated = UpdateTrialSchema.safeParse({
+    firstName: formData.get("firstName"),
+    lastName: formData.get("lastName"),
+    phone: formData.get("phone") || undefined,
+    email: formData.get("email") || undefined,
+    locationId: formData.get("locationId"),
+    message: formData.get("message") || undefined,
+    status: formData.get("status"),
+  });
+
+  if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
+
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) => db.trial.update({ where: { id }, data: validated.data }));
+  revalidatePath("/trials");
+}
+
+export async function deleteTrial(id: string): Promise<{ error?: string }> {
+  const permError = await checkPermission("permTrials");
+  if (permError) return permError;
+
+  const { gymId } = await getCurrentEmployee();
+
+  const result = await withGymScope(gymId, async (db) => {
+    const convertedCustomer = await db.customer.findFirst({ where: { originTrialId: id } });
+    if (convertedCustomer) {
+      return {
+        error:
+          "Dieses Probetraining ist bereits zu einem Kunden geworden und kann nicht gelöscht werden.",
+      };
+    }
+    await db.trialProposedSlot.deleteMany({ where: { trialId: id } });
+    await db.trial.delete({ where: { id } });
+    return undefined;
+  });
+
+  if (result?.error) return result;
+
+  revalidatePath("/trials");
+  return {};
 }
 
 function generateToken() {
@@ -75,14 +135,15 @@ export async function proposeTrialSlots(
       : []),
   ];
 
-  await prisma.$transaction([
-    ...slots.map((slot) =>
-      prisma.trialProposedSlot.create({
-        data: { trialId, ...slot, token: generateToken(), response: "PENDING" },
-      }),
-    ),
-    prisma.trial.update({ where: { id: trialId }, data: { status: "PROPOSED" } }),
-  ]);
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, async (db) => {
+    for (const slot of slots) {
+      await db.trialProposedSlot.create({
+        data: { gymId, trialId, ...slot, token: generateToken(), response: "PENDING" },
+      });
+    }
+    await db.trial.update({ where: { id: trialId }, data: { status: "PROPOSED" } });
+  });
 
   revalidatePath("/trials");
 }

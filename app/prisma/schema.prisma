@@ -1,7 +1,19 @@
-// BEEPLUS Datenmodell
-// Enums sind als String-Spalten modelliert (SQLite unterstützt keine nativen Enums);
-// erlaubte Werte sind in src/lib/enums.ts als zod-Enums definiert und dort dokumentiert.
-// Geldbeträge sind Int in Cent (kein Float, robust unabhängig von der DB).
+// BEEPLUS Datenmodell (Postgres, mandantenfaehig).
+//
+// Mandantentrennung (siehe gymproject.md / Sicherheitsanforderung "ein Gym darf
+// niemals Daten eines anderen Gyms sehen") wird auf zwei unabhaengigen Ebenen
+// durchgesetzt:
+//   1. Anwendungsebene: src/lib/scoped-prisma.ts erzwingt gymId auf jeder Query.
+//   2. Datenbankebene: Row-Level-Security-Policies (siehe Migration
+//      enable_row_level_security), die selbst bei einem Anwendungsfehler den
+//      Zugriff auf fremde Zeilen verweigern.
+// Deshalb tragen bewusst auch "Kind"-Tabellen (z.B. Booking, SepaDebit) eine
+// eigene gymId-Spalte, obwohl sie sich theoretisch über eine Relation
+// herleiten liesse - das macht RLS-Policies pro Tabelle trivial und
+// unabhaengig von Joins.
+//
+// Enums sind als String-Spalten modelliert; erlaubte Werte stehen in
+// src/lib/enums.ts als zod-Enums. Geldbetraege sind Int in Cent.
 
 generator client {
   provider = "prisma-client"
@@ -9,11 +21,78 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
+
+// --- Mandant + Plattform-Verwaltung -----------------------------------
+
+model Gym {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  status       String   @default("ACTIVE") // GymStatus: ACTIVE | SUSPENDED
+  contactEmail String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Branding (White-Label) - alle optional, ungesetzt faellt auf die
+  // BEEPLUS-Standardmarke zurueck (siehe src/lib/branding.ts). Nur diese
+  // Felder sind pro Gym einstellbar; Statusfarben, Abstaende, Radien und
+  // Layout bleiben bewusst fest verdrahtet (Qualitaetsversprechen).
+  logoUrl        String? // Standard-Logo (Upload)
+  logoOnDarkUrl  String? // optionale Variante fuer dunkle Hintergruende (Sidebar, Login-Panel)
+  logoOnLightUrl String? // optionale Variante fuer helle Hintergruende
+  faviconUrl     String? // automatisch aus logoUrl generiert, nicht separat hochladbar
+  loginClaim     String? // freier Text auf dem Login-Screen
+  primaryColor   String? // Hex, z.B. "#e2483d" - einzige direkt gesetzte Markenfarbe
+  accentColor    String? // Hex, optional, fuer Sekundaeres
+
+  locations      Location[]
+  employees      Employee[]
+  customers      Customer[]
+  contractPlans  ContractPlan[]
+  voucherTypes   VoucherType[]
+  courses        Course[]
+  events         Event[]
+  calendarEvents CalendarEvent[]
+  bookings       Booking[]
+  trials         Trial[]
+  news           News[]
+  emailTemplates EmailTemplate[]
+  settings       Settings?
+  employeePayouts     EmployeePayout[]
+  customerBankAccounts CustomerBankAccount[]
+  sepaDebits          SepaDebit[]
+  contractDetails     ContractDetail[]
+  voucherAssignments  VoucherAssignment[]
+  trialProposedSlots  TrialProposedSlot[]
+  newsAttachments     NewsAttachment[]
+}
+
+// Plattform-Betreiber-Konto (BEEPLUS-Betreiber, nicht Gym-Personal!) -
+// bewusst ein eigenes Modell statt eines Flags auf Employee, damit ein
+// Gym-Mitarbeiter niemals versehentlich plattformweiten Zugriff erhalten
+// kann.
+model PlatformAdmin {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  email        String   @unique
+  passwordHash String
+
+  passwordResetToken     String?   @unique
+  passwordResetExpiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// --- Gym-Stammdaten -----------------------------------------------------
 
 model Location {
   id        String   @id @default(cuid())
+  gymId     String
+  gym       Gym      @relation(fields: [gymId], references: [id])
   city      String
   street    String
   zip       String
@@ -32,6 +111,8 @@ model Location {
 
 model Employee {
   id            String    @id @default(cuid())
+  gymId         String
+  gym           Gym       @relation(fields: [gymId], references: [id])
   firstName     String
   lastName      String
   gender        String // Gender: w | m
@@ -63,7 +144,8 @@ model Employee {
   salaryCents     Int?
   paymentSchedule String? // PaymentSchedule: FIRST_OF_MONTH | FIFTEENTH_OF_MONTH
 
-  // Berechtigungen (permAdmin übertrumpft/beinhaltet alle anderen)
+  // Berechtigungen (permAdmin übertrumpft/beinhaltet alle anderen, gilt
+  // ausschliesslich innerhalb des eigenen Gyms)
   permAdmin          Boolean @default(false)
   permCalendar       Boolean @default(false)
   permTrials         Boolean @default(false)
@@ -83,6 +165,8 @@ model Employee {
 
 model EmployeePayout {
   id          String   @id @default(cuid())
+  gymId       String
+  gym         Gym      @relation(fields: [gymId], references: [id])
   employeeId  String
   employee    Employee @relation(fields: [employeeId], references: [id])
   amountCents Int
@@ -92,6 +176,8 @@ model EmployeePayout {
 
 model Customer {
   id          String   @id @default(cuid())
+  gymId       String
+  gym         Gym      @relation(fields: [gymId], references: [id])
   firstName   String
   lastName    String
   gender      String // Gender: w | m
@@ -100,11 +186,16 @@ model Customer {
   houseNumber String?
   zip         String?
   city        String?
-  email       String?
-  phone       String?
-  mobile      String?
-  notes       String?
-  photoUrl    String?
+  // @unique gilt global (nicht nur pro Gym): die Mobile-App identifiziert
+  // einen Login-Versuch per OTP ausschliesslich ueber die E-Mail, bevor die
+  // gymId bekannt ist (siehe api/mobile/auth) - zwei Customer-Datensaetze mit
+  // derselben E-Mail waeren dort nicht mehr eindeutig auflösbar. Kunden ohne
+  // E-Mail (weiterhin erlaubt) haben schlicht keinen App-Zugang.
+  email    String? @unique
+  phone    String?
+  mobile   String?
+  notes    String?
+  photoUrl String?
 
   status       String // CustomerStatus: ACTIVE | PAUSED | INACTIVE
   contractType String // ContractType: VOUCHER | CONTRACT | TRIAL
@@ -114,6 +205,14 @@ model Customer {
 
   originTrialId String?
   originTrial   Trial?  @relation(fields: [originTrialId], references: [id])
+
+  // Mobile-App-Login (Magic-Link/OTP, kein Passwort - siehe lib/core/otp.ts).
+  // otpCodeHash statt Klartext, damit ein DB-Leak keine gueltigen Codes
+  // preisgibt; otpAttempts begrenzt Brute-Force auf den kurzlebigen Code.
+  otpCodeHash   String?
+  otpExpiresAt  DateTime?
+  otpAttempts   Int       @default(0)
+  expoPushToken String? // fuer Warteliste-Promotion-Push, siehe lib/push.ts
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -127,6 +226,8 @@ model Customer {
 
 model CustomerBankAccount {
   id                    String   @id @default(cuid())
+  gymId                 String
+  gym                   Gym      @relation(fields: [gymId], references: [id])
   customerId            String   @unique
   customer              Customer @relation(fields: [customerId], references: [id])
   bankName              String?
@@ -138,6 +239,8 @@ model CustomerBankAccount {
 
 model SepaDebit {
   id          String   @id @default(cuid())
+  gymId       String
+  gym         Gym      @relation(fields: [gymId], references: [id])
   customerId  String
   customer    Customer @relation(fields: [customerId], references: [id])
   amountCents Int
@@ -148,10 +251,12 @@ model SepaDebit {
 // Vertragsart (Mitgliedschafts-Plan) — pflegbar, definiert u.a. die max. Anzahl
 // Kursbuchungen pro Woche. weeklyLimit == null bedeutet Flatrate (unbegrenzt).
 model ContractPlan {
-  id         String  @id @default(cuid())
-  name       String
+  id          String  @id @default(cuid())
+  gymId       String
+  gym         Gym     @relation(fields: [gymId], references: [id])
+  name        String
   weeklyLimit Int?
-  notes      String?
+  notes       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -162,6 +267,8 @@ model ContractPlan {
 // Rohdaten + on-write neuberechnete Ergebnisse aus lib/core/cancellation.ts
 model ContractDetail {
   id         String   @id @default(cuid())
+  gymId      String
+  gym        Gym      @relation(fields: [gymId], references: [id])
   customerId String   @unique
   customer   Customer @relation(fields: [customerId], references: [id])
 
@@ -179,16 +286,18 @@ model ContractDetail {
   cancellationReceivedAt DateTime?
 
   // Berechnete Werte (aus calculateContractCancellation)
-  contractEndDate            DateTime
-  cancellationPossibleUntil  DateTime
-  cancellationEffectiveAt    DateTime
-  autoRenewed                Boolean   @default(false)
+  contractEndDate           DateTime
+  cancellationPossibleUntil DateTime
+  cancellationEffectiveAt   DateTime
+  autoRenewed               Boolean  @default(false)
 
   updatedAt DateTime @updatedAt
 }
 
 model VoucherType {
   id             String  @id @default(cuid())
+  gymId          String
+  gym            Gym     @relation(fields: [gymId], references: [id])
   label          String // z.B. "10er Karte"
   validityMonths Int
   sessionCount   Int
@@ -200,6 +309,8 @@ model VoucherType {
 
 model VoucherAssignment {
   id                String      @id @default(cuid())
+  gymId             String
+  gym               Gym         @relation(fields: [gymId], references: [id])
   customerId        String      @unique
   customer          Customer    @relation(fields: [customerId], references: [id])
   voucherTypeId     String
@@ -211,6 +322,8 @@ model VoucherAssignment {
 
 model Course {
   id               String    @id @default(cuid())
+  gymId            String
+  gym              Gym       @relation(fields: [gymId], references: [id])
   title            String
   description      String? // Kurzbeschreibung
   leadTrainerId    String
@@ -218,6 +331,11 @@ model Course {
   participantLimit Int
   trialPossible    Boolean   @default(false)
   trialDate        DateTime?
+  // Wie viele Stunden vor Kursbeginn ein Mitglied ueber die App noch stornieren
+  // kann, ohne dass es als Nichterscheinen zaehlt. null = keine Frist (jederzeit
+  // stornierbar). Pro Kurs statt global, da Studios das je nach Auslastung/
+  // Trainer-Vorlaufzeit unterschiedlich handhaben wollen.
+  cancellationCutoffHours Int?
 
   locations          Location[]           @relation("CourseLocations")
   calendarEvents     CalendarEvent[]
@@ -229,6 +347,8 @@ model Course {
 // Probetrainings vorgesehen, aber ebenfalls im Kalender terminierbar.
 model Event {
   id               String  @id @default(cuid())
+  gymId            String
+  gym              Gym     @relation(fields: [gymId], references: [id])
   title            String
   description      String? // Kurzbeschreibung
   participantLimit Int
@@ -241,10 +361,11 @@ model Event {
 }
 
 model CalendarEvent {
-  id         String   @id @default(cuid())
+  id    String @id @default(cuid())
+  gymId String
+  gym   Gym    @relation(fields: [gymId], references: [id])
   // Genau eines von courseId/eventId ist gesetzt (in den Server Actions
-  // validiert - SQLite unterstützt hier keine deklarative CHECK-Constraint
-  // über Prisma).
+  // validiert - Prisma bildet keine deklarative XOR-CHECK-Constraint ab).
   courseId   String?
   course     Course?  @relation(fields: [courseId], references: [id])
   eventId    String?
@@ -264,6 +385,8 @@ model CalendarEvent {
 
 model Booking {
   id               String        @id @default(cuid())
+  gymId            String
+  gym              Gym           @relation(fields: [gymId], references: [id])
   calendarEventId  String
   calendarEvent    CalendarEvent @relation(fields: [calendarEventId], references: [id])
   customerId       String
@@ -275,6 +398,8 @@ model Booking {
 
 model Trial {
   id         String   @id @default(cuid())
+  gymId      String
+  gym        Gym      @relation(fields: [gymId], references: [id])
   firstName  String
   lastName   String
   phone      String?
@@ -291,6 +416,8 @@ model Trial {
 
 model TrialProposedSlot {
   id          String    @id @default(cuid())
+  gymId       String
+  gym         Gym       @relation(fields: [gymId], references: [id])
   trialId     String
   trial       Trial     @relation(fields: [trialId], references: [id])
   startsAt    DateTime
@@ -302,10 +429,12 @@ model TrialProposedSlot {
 }
 
 model News {
-  id                String   @id @default(cuid())
-  subject           String
-  message           String
-  sentAt            DateTime?
+  id                 String    @id @default(cuid())
+  gymId              String
+  gym                Gym       @relation(fields: [gymId], references: [id])
+  subject            String
+  message            String
+  sentAt             DateTime?
   status             String // NewsStatus: SENT | DRAFT | ARCHIVED
   publishOnWebsite   Boolean  @default(false)
   publishOnFacebook  Boolean  @default(false)
@@ -318,6 +447,8 @@ model News {
 
 model NewsAttachment {
   id       String @id @default(cuid())
+  gymId    String
+  gym      Gym    @relation(fields: [gymId], references: [id])
   newsId   String
   news     News   @relation(fields: [newsId], references: [id])
   fileName String
@@ -326,14 +457,20 @@ model NewsAttachment {
 
 model EmailTemplate {
   id        String   @id @default(cuid())
+  gymId     String
+  gym       Gym      @relation(fields: [gymId], references: [id])
   category  String // EmailTemplateCategory: PERSON | CALENDAR | BILLING
   label     String
   body      String // Text mit Platzhaltern, z.B. {{Vorname}}
   updatedAt DateTime @updatedAt
 }
 
+// 1 Zeile pro Gym (gymId ist zugleich Primärschlüssel statt Singleton-id=1
+// wie im fruehen Single-Tenant-Entwurf).
 model Settings {
-  id                        Int @id @default(1)
+  gymId String @id
+  gym   Gym    @relation(fields: [gymId], references: [id])
+
   defaultNoticePeriodMonths Int @default(3)
   defaultAutoRenewalMonths  Int @default(3)
 

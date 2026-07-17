@@ -60,7 +60,7 @@ export function CustomerContractForm({
   return (
     <form action={formAction} className="space-y-6 rounded-lg border bg-background p-4">
       <div>
-        <h3 className="mb-3 font-medium">Vertragdetails</h3>
+        <h3 className="mb-3 font-medium">Vertragsdetails</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Mitgliedschaft</Label>
@@ -80,22 +80,22 @@ export function CustomerContractForm({
             </RadioGroup>
           </div>
           <div className="space-y-2">
-            <Label>Beigetreten am</Label>
-            <Input value={formatDateDe(customer.joinedAt)} disabled />
+            <Label htmlFor="joinedAtDisplay">Beigetreten am</Label>
+            <Input id="joinedAtDisplay" value={formatDateDe(customer.joinedAt)} disabled />
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label>Am Standort</Label>
-            <Input value={customer.location.city} disabled />
+            <Label htmlFor="locationDisplay">Am Standort</Label>
+            <Input id="locationDisplay" value={customer.location.city} disabled />
           </div>
           <div className="space-y-2">
             <Label htmlFor="planId" required>
               Vertragsart
             </Label>
             <Select name="planId" defaultValue={contract.planId} required>
-              <SelectTrigger id="planId" className="w-full">
+              <SelectTrigger id="planId" aria-label="Vertragsart" className="w-full">
                 <SelectValue>
                   {(v: string) => contractPlans.find((p) => p.id === v)?.name}
                 </SelectValue>
@@ -121,7 +121,7 @@ export function CustomerContractForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="autoRenewalMonths">aut. Verlängerung (Monate)</Label>
+            <Label htmlFor="autoRenewalMonths">Automatische Verlängerung (Monate)</Label>
             <Input
               id="autoRenewalMonths"
               name="autoRenewalMonths"
@@ -152,7 +152,7 @@ export function CustomerContractForm({
             />
           </div>
           <div className="space-y-2">
-            <Label>Abbuchungs Option</Label>
+            <Label>Abbuchungsoption</Label>
             <RadioGroup name="debitOption" defaultValue={contract.debitOption} className="flex gap-4 pt-1.5">
               <div className="flex items-center gap-2">
                 <RadioGroupItem value="MONTHLY" id="debit-monthly" />
@@ -189,8 +189,12 @@ export function CustomerContractForm({
             />
           </div>
           <div className="space-y-2">
-            <Label>Kündigung möglich bis</Label>
-            <Input value={formatDateDe(contract.cancellationPossibleUntil)} disabled />
+            <Label htmlFor="cancellationPossibleUntilDisplay">Kündigung möglich bis</Label>
+            <Input
+              id="cancellationPossibleUntilDisplay"
+              value={formatDateDe(contract.cancellationPossibleUntil)}
+              disabled
+            />
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4">
@@ -224,8 +228,12 @@ export function CustomerContractForm({
             />
           </div>
           <div className="space-y-2">
-            <Label>Kündigung wirksam am</Label>
-            <Input value={formatDateDe(contract.cancellationEffectiveAt)} disabled />
+            <Label htmlFor="cancellationEffectiveAtDisplay">Kündigung wirksam am</Label>
+            <Input
+              id="cancellationEffectiveAtDisplay"
+              value={formatDateDe(contract.cancellationEffectiveAt)}
+              disabled
+            />
           </div>
         </div>
 

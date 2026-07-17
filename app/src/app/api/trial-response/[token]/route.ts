@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { directPrisma } from "@/lib/prisma-direct";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { getOccupancyStatus } from "@/lib/core/occupancy";
 
 function page(title: string, message: string) {
@@ -39,7 +40,11 @@ export async function GET(
   const { token } = await params;
   const action = request.nextUrl.searchParams.get("action");
 
-  const slot = await prisma.trialProposedSlot.findUnique({
+  // directPrisma: der Token ist der einzige Anhaltspunkt, die gymId des
+  // zugehoerigen Trials ist per Definition noch nicht bekannt - dieser eine
+  // Lookup muss RLS umgehen. Alles Weitere laeuft ueber withGymScope() mit
+  // der so ermittelten gymId.
+  const slot = await directPrisma.trialProposedSlot.findUnique({
     where: { token },
     include: { trial: true, course: true },
   });
@@ -48,23 +53,27 @@ export async function GET(
     return respond(404, "Link ungültig", "Dieser Terminvorschlag wurde nicht gefunden.");
   }
 
-  if (action === "decline") {
-    if (slot.response === "PENDING") {
-      await prisma.trialProposedSlot.update({
-        where: { id: slot.id },
-        data: { response: "DECLINED", respondedAt: new Date() },
-      });
-    }
+  const gymId = slot.trial.gymId;
 
-    const remainingPending = await prisma.trialProposedSlot.count({
-      where: { trialId: slot.trialId, response: "PENDING" },
+  if (action === "decline") {
+    await withGymScope(gymId, async (db) => {
+      if (slot.response === "PENDING") {
+        await db.trialProposedSlot.update({
+          where: { id: slot.id },
+          data: { response: "DECLINED", respondedAt: new Date() },
+        });
+      }
+
+      const remainingPending = await db.trialProposedSlot.count({
+        where: { trialId: slot.trialId, response: "PENDING" },
+      });
+      const anyAccepted = await db.trialProposedSlot.count({
+        where: { trialId: slot.trialId, response: "ACCEPTED" },
+      });
+      if (remainingPending === 0 && anyAccepted === 0) {
+        await db.trial.update({ where: { id: slot.trialId }, data: { status: "DECLINED" } });
+      }
     });
-    const anyAccepted = await prisma.trialProposedSlot.count({
-      where: { trialId: slot.trialId, response: "ACCEPTED" },
-    });
-    if (remainingPending === 0 && anyAccepted === 0) {
-      await prisma.trial.update({ where: { id: slot.trialId }, data: { status: "DECLINED" } });
-    }
 
     return respond(
       200,
@@ -74,74 +83,84 @@ export async function GET(
   }
 
   if (action === "accept") {
-    const alreadyAccepted = await prisma.trialProposedSlot.findFirst({
-      where: { trialId: slot.trialId, response: "ACCEPTED" },
+    const outcome = await withGymScope(gymId, async (db) => {
+      const alreadyAccepted = await db.trialProposedSlot.findFirst({
+        where: { trialId: slot.trialId, response: "ACCEPTED" },
+      });
+
+      if (alreadyAccepted && alreadyAccepted.id !== slot.id) {
+        return "already-accepted" as const;
+      }
+
+      if (slot.response !== "ACCEPTED") {
+        await db.trialProposedSlot.update({
+          where: { id: slot.id },
+          data: { response: "ACCEPTED", respondedAt: new Date() },
+        });
+
+        await db.trial.update({ where: { id: slot.trialId }, data: { status: "ACCEPTED" } });
+
+        const existingCustomer = await db.customer.findFirst({
+          where: { originTrialId: slot.trialId },
+        });
+
+        if (!existingCustomer) {
+          const customer = await db.customer.create({
+            data: {
+              gymId,
+              firstName: slot.trial.firstName,
+              lastName: slot.trial.lastName,
+              gender: "w",
+              birthday: new Date(1990, 0, 1),
+              email: slot.trial.email,
+              phone: slot.trial.phone,
+              status: "ACTIVE",
+              contractType: "TRIAL",
+              locationId: slot.trial.locationId,
+              joinedAt: new Date(),
+              originTrialId: slot.trialId,
+            },
+          });
+
+          if (slot.courseId) {
+            const dayStart = new Date(slot.startsAt);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(dayStart);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            const calendarEvent = await db.calendarEvent.findFirst({
+              where: { courseId: slot.courseId, startsAt: { gte: dayStart, lte: dayEnd } },
+              include: { bookings: { where: { status: "BOOKED" } } },
+            });
+
+            if (calendarEvent) {
+              const occupancy = getOccupancyStatus(
+                calendarEvent.bookings.length,
+                calendarEvent.capacity,
+              );
+              await db.booking.create({
+                data: {
+                  gymId,
+                  calendarEventId: calendarEvent.id,
+                  customerId: customer.id,
+                  status: occupancy === "red" ? "WAITLISTED" : "BOOKED",
+                  waitlistPosition:
+                    occupancy === "red" ? calendarEvent.bookings.length + 1 : null,
+                },
+              });
+            }
+          }
+        }
+      }
+      return "accepted" as const;
     });
 
-    if (alreadyAccepted && alreadyAccepted.id !== slot.id) {
+    if (outcome === "already-accepted") {
       return respond(
         200,
         "Bereits angemeldet",
         "Du bist bereits für ein anderes Probetraining angemeldet.",
       );
-    }
-
-    if (slot.response !== "ACCEPTED") {
-      await prisma.trialProposedSlot.update({
-        where: { id: slot.id },
-        data: { response: "ACCEPTED", respondedAt: new Date() },
-      });
-
-      await prisma.trial.update({ where: { id: slot.trialId }, data: { status: "ACCEPTED" } });
-
-      const existingCustomer = await prisma.customer.findFirst({
-        where: { originTrialId: slot.trialId },
-      });
-
-      if (!existingCustomer) {
-        const customer = await prisma.customer.create({
-          data: {
-            firstName: slot.trial.firstName,
-            lastName: slot.trial.lastName,
-            gender: "w",
-            birthday: new Date(1990, 0, 1),
-            email: slot.trial.email,
-            phone: slot.trial.phone,
-            status: "ACTIVE",
-            contractType: "TRIAL",
-            locationId: slot.trial.locationId,
-            joinedAt: new Date(),
-            originTrialId: slot.trialId,
-          },
-        });
-
-        if (slot.courseId) {
-          const dayStart = new Date(slot.startsAt);
-          dayStart.setHours(0, 0, 0, 0);
-          const dayEnd = new Date(dayStart);
-          dayEnd.setHours(23, 59, 59, 999);
-
-          const calendarEvent = await prisma.calendarEvent.findFirst({
-            where: { courseId: slot.courseId, startsAt: { gte: dayStart, lte: dayEnd } },
-            include: { bookings: { where: { status: "BOOKED" } } },
-          });
-
-          if (calendarEvent) {
-            const occupancy = getOccupancyStatus(
-              calendarEvent.bookings.length,
-              calendarEvent.capacity,
-            );
-            await prisma.booking.create({
-              data: {
-                calendarEventId: calendarEvent.id,
-                customerId: customer.id,
-                status: occupancy === "red" ? "WAITLISTED" : "BOOKED",
-                waitlistPosition: occupancy === "red" ? calendarEvent.bookings.length + 1 : null,
-              },
-            });
-          }
-        }
-      }
     }
 
     return respond(

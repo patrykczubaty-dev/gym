@@ -2,8 +2,9 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 
 export type ActionState = { error: string } | undefined;
 
@@ -28,7 +29,10 @@ export async function createContractPlan(
   });
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
-  await prisma.contractPlan.create({ data: validated.data });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.contractPlan.create({ data: { ...validated.data, gymId } }),
+  );
   revalidatePath("/contract-plans");
 }
 
@@ -48,7 +52,10 @@ export async function updateContractPlan(
   });
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
-  await prisma.contractPlan.update({ where: { id }, data: validated.data });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.contractPlan.update({ where: { id }, data: validated.data }),
+  );
   revalidatePath("/contract-plans");
 }
 
@@ -56,11 +63,14 @@ export async function deleteContractPlan(id: string): Promise<{ error?: string }
   const permError = await checkPermission("permCustomers");
   if (permError) return permError;
 
-  const inUse = await prisma.contractDetail.count({ where: { planId: id } });
+  const { gymId } = await getCurrentEmployee();
+  const inUse = await withGymScope(gymId, (db) =>
+    db.contractDetail.count({ where: { planId: id } }),
+  );
   if (inUse > 0) {
     return { error: "Vertragsart ist noch in Verwendung und kann nicht gelöscht werden." };
   }
-  await prisma.contractPlan.delete({ where: { id } });
+  await withGymScope(gymId, (db) => db.contractPlan.delete({ where: { id } }));
   revalidatePath("/contract-plans");
   return {};
 }

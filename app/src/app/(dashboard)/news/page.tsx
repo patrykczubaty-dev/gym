@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -26,14 +27,17 @@ export default async function NewsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status } = await searchParams;
-  const [news, locations] = await Promise.all([
-    prisma.news.findMany({
-      where: status ? { status } : undefined,
-      orderBy: { createdAt: "desc" },
-      include: { locations: true, attachments: true },
-    }),
-    prisma.location.findMany({ orderBy: { city: "asc" } }),
-  ]);
+  const { gymId } = await getCurrentEmployee();
+  const [news, locations] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.news.findMany({
+        where: status ? { status } : undefined,
+        orderBy: { createdAt: "desc" },
+        include: { locations: true, attachments: true },
+      }),
+      db.location.findMany({ orderBy: { city: "asc" } }),
+    ]),
+  );
 
   const folders = [
     { key: undefined, label: "Alle" },

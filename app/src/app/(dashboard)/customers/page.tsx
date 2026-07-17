@@ -1,27 +1,31 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import { Button } from "@/components/ui/button";
 import { CustomersTable } from "@/components/customers/customers-table";
 import { Plus } from "lucide-react";
 
 export default async function CustomersPage() {
-  const [customers, locations] = await Promise.all([
-    prisma.customer.findMany({
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        status: true,
-        contractType: true,
-        photoUrl: true,
-        joinedAt: true,
-        locationId: true,
-        location: { select: { city: true } },
-      },
-    }),
-    prisma.location.findMany({ orderBy: { city: "asc" }, select: { id: true, city: true } }),
-  ]);
+  const { gymId } = await getCurrentEmployee();
+  const [customers, locations] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.customer.findMany({
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          status: true,
+          contractType: true,
+          photoUrl: true,
+          joinedAt: true,
+          locationId: true,
+          location: { select: { city: true } },
+        },
+      }),
+      db.location.findMany({ orderBy: { city: "asc" }, select: { id: true, city: true } }),
+    ]),
+  );
 
   return (
     <div className="space-y-4">

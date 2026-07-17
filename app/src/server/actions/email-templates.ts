@@ -2,8 +2,9 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 
 export type ActionState = { error: string } | undefined;
 
@@ -21,6 +22,9 @@ export async function updateEmailTemplate(
   const validated = Schema.safeParse({ body: formData.get("body") });
   if (!validated.success) return { error: "Text darf nicht leer sein." };
 
-  await prisma.emailTemplate.update({ where: { id }, data: validated.data });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.emailTemplate.update({ where: { id }, data: validated.data }),
+  );
   revalidatePath("/email-templates");
 }

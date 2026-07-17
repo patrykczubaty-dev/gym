@@ -1,11 +1,15 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee, getCurrentGymBranding } from "@/lib/dal";
+import { resolveGymBranding } from "@/lib/branding";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDateDe } from "@/lib/dates";
 import { Users, ClipboardList, Dumbbell, Newspaper, CalendarClock, FileWarning } from "lucide-react";
 
 export default async function DashboardPage() {
+  const gym = await getCurrentGymBranding();
+  const branding = resolveGymBranding(gym);
   const now = new Date();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
@@ -20,6 +24,7 @@ export default async function DashboardPage() {
   const in30Days = new Date(now);
   in30Days.setDate(in30Days.getDate() + 30);
 
+  const { gymId } = await getCurrentEmployee();
   const [
     activeCustomers,
     newActiveThisWeek,
@@ -31,43 +36,45 @@ export default async function DashboardPage() {
     latestNews,
     upcomingEvents,
     soonCancellable,
-  ] = await Promise.all([
-    prisma.customer.count({ where: { status: "ACTIVE" } }),
-    prisma.customer.count({
-      where: { status: "ACTIVE", joinedAt: { gte: weekAgo } },
-    }),
-    prisma.trial.count({ where: { status: { in: ["OPEN", "PROPOSED"] } } }),
-    prisma.trial.count({ where: { createdAt: { gte: weekAgo } } }),
-    prisma.booking.count({
-      where: {
-        status: "BOOKED",
-        calendarEvent: { startsAt: { gte: todayStart, lte: todayEnd } },
-      },
-    }),
-    prisma.booking.count({
-      where: {
-        status: "BOOKED",
-        calendarEvent: { startsAt: { gte: yesterdayStart, lte: yesterdayEnd } },
-      },
-    }),
-    prisma.news.count({ where: { createdAt: { gte: weekAgo } } }),
-    prisma.news.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
-    prisma.calendarEvent.findMany({
-      where: { startsAt: { gte: now } },
-      orderBy: { startsAt: "asc" },
-      take: 5,
-      include: { course: true, event: true, location: true },
-    }),
-    prisma.contractDetail.findMany({
-      where: {
-        cancellationReceivedAt: null,
-        cancellationPossibleUntil: { gte: now, lte: in30Days },
-      },
-      orderBy: { cancellationPossibleUntil: "asc" },
-      take: 5,
-      include: { customer: true },
-    }),
-  ]);
+  ] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.customer.count({ where: { status: "ACTIVE" } }),
+      db.customer.count({
+        where: { status: "ACTIVE", joinedAt: { gte: weekAgo } },
+      }),
+      db.trial.count({ where: { status: { in: ["OPEN", "PROPOSED"] } } }),
+      db.trial.count({ where: { createdAt: { gte: weekAgo } } }),
+      db.booking.count({
+        where: {
+          status: "BOOKED",
+          calendarEvent: { startsAt: { gte: todayStart, lte: todayEnd } },
+        },
+      }),
+      db.booking.count({
+        where: {
+          status: "BOOKED",
+          calendarEvent: { startsAt: { gte: yesterdayStart, lte: yesterdayEnd } },
+        },
+      }),
+      db.news.count({ where: { createdAt: { gte: weekAgo } } }),
+      db.news.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+      db.calendarEvent.findMany({
+        where: { startsAt: { gte: now } },
+        orderBy: { startsAt: "asc" },
+        take: 5,
+        include: { course: true, event: true, location: true },
+      }),
+      db.contractDetail.findMany({
+        where: {
+          cancellationReceivedAt: null,
+          cancellationPossibleUntil: { gte: now, lte: in30Days },
+        },
+        orderBy: { cancellationPossibleUntil: "asc" },
+        take: 5,
+        include: { customer: true },
+      }),
+    ]),
+  );
 
   const bookingsDelta = todaysBookings - yesterdaysBookings;
 
@@ -122,7 +129,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Willkommen zurück im BEEPLUS-Backend.</p>
+        <p className="text-sm text-muted-foreground">Willkommen zurück im {branding.studioName}-Backend.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

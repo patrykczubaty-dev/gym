@@ -154,7 +154,7 @@ export function CourseDialog({
 
           <div className="space-y-2">
             <Label htmlFor="participantLimit" required>
-              Teilnehmer Limit
+              Max. Teilnehmer
             </Label>
             <Input
               id="participantLimit"

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -13,10 +14,13 @@ import { formatDateDe } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 
 export default async function SepaPage() {
-  const debits = await prisma.sepaDebit.findMany({
-    orderBy: { bookingDate: "desc" },
-    include: { customer: { select: { id: true, firstName: true, lastName: true } } },
-  });
+  const { gymId } = await getCurrentEmployee();
+  const debits = await withGymScope(gymId, (db) =>
+    db.sepaDebit.findMany({
+      orderBy: { bookingDate: "desc" },
+      include: { customer: { select: { id: true, firstName: true, lastName: true } } },
+    }),
+  );
 
   const openCents = debits
     .filter((d) => d.status === "OPEN")

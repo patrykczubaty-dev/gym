@@ -2,8 +2,9 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 
 export type ActionState = { error: string } | undefined;
 
@@ -39,9 +40,12 @@ export async function createCourse(
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
   const { locationIds, ...rest } = validated.data;
-  await prisma.course.create({
-    data: { ...rest, locations: { connect: locationIds.map((id) => ({ id })) } },
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.course.create({
+      data: { ...rest, gymId, locations: { connect: locationIds.map((id) => ({ id })) } },
+    }),
+  );
   revalidatePath("/courses");
 }
 
@@ -56,23 +60,29 @@ export async function updateCourse(
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
   const { locationIds, ...rest } = validated.data;
-  await prisma.course.update({
-    where: { id },
-    data: { ...rest, locations: { set: locationIds.map((lid) => ({ id: lid })) } },
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.course.update({
+      where: { id },
+      data: { ...rest, locations: { set: locationIds.map((lid) => ({ id: lid })) } },
+    }),
+  );
   revalidatePath("/courses");
 }
 
 export async function deleteCourse(id: string): Promise<{ error?: string }> {
   const permError = await checkPermission("permCalendar");
   if (permError) return permError;
-  const eventCount = await prisma.calendarEvent.count({ where: { courseId: id } });
+  const { gymId } = await getCurrentEmployee();
+  const eventCount = await withGymScope(gymId, (db) =>
+    db.calendarEvent.count({ where: { courseId: id } }),
+  );
   if (eventCount > 0) {
     return {
       error: "Kurs kann nicht gelöscht werden, solange Kalendertermine existieren.",
     };
   }
-  await prisma.course.delete({ where: { id } });
+  await withGymScope(gymId, (db) => db.course.delete({ where: { id } }));
   revalidatePath("/courses");
   return {};
 }

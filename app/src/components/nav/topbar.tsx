@@ -39,6 +39,7 @@ export function Topbar({
             size="icon"
             className="md:hidden"
             title="Menü"
+            aria-label="Navigationsmenü öffnen"
             onClick={() => setMobileNavOpen(true)}
           >
             <Menu className="size-5" />
@@ -68,7 +69,7 @@ export function Topbar({
           </span>
         </Link>
         <form action={logout}>
-          <Button type="submit" variant="ghost" size="icon" title="Abmelden">
+          <Button type="submit" variant="ghost" size="icon" title="Abmelden" aria-label="Abmelden">
             <LogOut className="size-4" />
           </Button>
         </form>

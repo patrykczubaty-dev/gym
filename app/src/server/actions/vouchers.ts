@@ -2,8 +2,9 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 import { eurosToCents } from "@/lib/money";
 
 export type ActionState = { error: string } | undefined;
@@ -32,9 +33,12 @@ export async function createVoucherType(
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
   const { priceEuros, ...rest } = validated.data;
-  await prisma.voucherType.create({
-    data: { ...rest, priceCents: eurosToCents(priceEuros) },
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.voucherType.create({
+      data: { ...rest, gymId, priceCents: eurosToCents(priceEuros) },
+    }),
+  );
   revalidatePath("/vouchers");
 }
 
@@ -55,21 +59,27 @@ export async function updateVoucherType(
   if (!validated.success) return { error: "Bitte alle Pflichtfelder prüfen." };
 
   const { priceEuros, ...rest } = validated.data;
-  await prisma.voucherType.update({
-    where: { id },
-    data: { ...rest, priceCents: eurosToCents(priceEuros) },
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.voucherType.update({
+      where: { id },
+      data: { ...rest, priceCents: eurosToCents(priceEuros) },
+    }),
+  );
   revalidatePath("/vouchers");
 }
 
 export async function deleteVoucherType(id: string): Promise<{ error?: string }> {
   const permError = await checkPermission("permVouchers");
   if (permError) return permError;
-  const inUse = await prisma.voucherAssignment.count({ where: { voucherTypeId: id } });
+  const { gymId } = await getCurrentEmployee();
+  const inUse = await withGymScope(gymId, (db) =>
+    db.voucherAssignment.count({ where: { voucherTypeId: id } }),
+  );
   if (inUse > 0) {
     return { error: "Gutschein-Typ ist noch in Verwendung und kann nicht gelöscht werden." };
   }
-  await prisma.voucherType.delete({ where: { id } });
+  await withGymScope(gymId, (db) => db.voucherType.delete({ where: { id } }));
   revalidatePath("/vouchers");
   return {};
 }
@@ -79,7 +89,8 @@ export async function removeVoucherAssignment(
 ): Promise<{ error?: string }> {
   const permError = await checkPermission("permVouchers");
   if (permError) return permError;
-  await prisma.voucherAssignment.delete({ where: { customerId } });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) => db.voucherAssignment.delete({ where: { customerId } }));
   revalidatePath("/vouchers/in-use");
   return {};
 }

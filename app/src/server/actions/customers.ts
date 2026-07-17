@@ -3,8 +3,9 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   ContractTypeEnum,
   CustomerStatusEnum,
@@ -64,45 +65,55 @@ export async function createCustomer(
   }
 
   const { contractType, ...rest } = validated.data;
+  const { gymId } = await getCurrentEmployee();
 
-  const customer = await prisma.customer.create({
-    data: { ...rest, contractType, status: "ACTIVE" },
-  });
+  let customerId: string | undefined;
 
-  if (contractType === "CONTRACT") {
-    const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-    const noticePeriodMonths = settings?.defaultNoticePeriodMonths ?? 3;
-    const autoRenewalMonths = settings?.defaultAutoRenewalMonths ?? 3;
-    const termMonths = 12;
-    const defaultPlan = await prisma.contractPlan.findFirst({ orderBy: { createdAt: "asc" } });
-    if (!defaultPlan) {
-      return { error: "Bitte zuerst unter Vertragsarten eine Vertragsart anlegen." };
-    }
-    const calc = calculateContractCancellation({
-      joinedAt: rest.joinedAt,
-      termMonths,
-      autoRenewalMonths,
-      noticePeriodMonths,
+  const result = await withGymScope(gymId, async (db) => {
+    const customer = await db.customer.create({
+      data: { ...rest, gymId, contractType, status: "ACTIVE" },
     });
-    await prisma.contractDetail.create({
-      data: {
-        customerId: customer.id,
-        planId: defaultPlan.id,
+    customerId = customer.id;
+
+    if (contractType === "CONTRACT") {
+      const settings = await db.settings.findUnique({ where: { gymId } });
+      const noticePeriodMonths = settings?.defaultNoticePeriodMonths ?? 3;
+      const autoRenewalMonths = settings?.defaultAutoRenewalMonths ?? 3;
+      const termMonths = 12;
+      const defaultPlan = await db.contractPlan.findFirst({ orderBy: { createdAt: "asc" } });
+      if (!defaultPlan) {
+        return { error: "Bitte zuerst unter Vertragsarten eine Vertragsart anlegen." };
+      }
+      const calc = calculateContractCancellation({
+        joinedAt: rest.joinedAt,
         termMonths,
         autoRenewalMonths,
         noticePeriodMonths,
-        feeCents: 0,
-        debitOption: "MONTHLY",
-        contractEndDate: calc.contractEndDate,
-        cancellationPossibleUntil: calc.cancellationPossibleUntil,
-        cancellationEffectiveAt: calc.cancellationEffectiveAt,
-        autoRenewed: calc.autoRenewed,
-      },
-    });
-  }
+      });
+      await db.contractDetail.create({
+        data: {
+          gymId,
+          customerId: customer.id,
+          planId: defaultPlan.id,
+          termMonths,
+          autoRenewalMonths,
+          noticePeriodMonths,
+          feeCents: 0,
+          debitOption: "MONTHLY",
+          contractEndDate: calc.contractEndDate,
+          cancellationPossibleUntil: calc.cancellationPossibleUntil,
+          cancellationEffectiveAt: calc.cancellationEffectiveAt,
+          autoRenewed: calc.autoRenewed,
+        },
+      });
+    }
+    return undefined;
+  });
+
+  if (result?.error) return result;
 
   revalidatePath("/customers");
-  redirect(`/customers/${customer.id}`);
+  redirect(`/customers/${customerId}`);
 }
 
 export async function updateCustomerPerson(
@@ -135,7 +146,8 @@ export async function updateCustomerPerson(
     return { error: "Bitte alle Pflichtfelder prüfen." };
   }
 
-  await prisma.customer.update({ where: { id }, data: validated.data });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) => db.customer.update({ where: { id }, data: validated.data }));
   revalidatePath(`/customers/${id}`);
 }
 
@@ -147,10 +159,13 @@ export async function updateCustomerPhoto(
   const permError = await checkPermission("permCustomers");
   if (permError) return permError;
   const photoUrl = formData.get("photoUrl");
-  await prisma.customer.update({
-    where: { id },
-    data: { photoUrl: typeof photoUrl === "string" && photoUrl ? photoUrl : null },
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.customer.update({
+      where: { id },
+      data: { photoUrl: typeof photoUrl === "string" && photoUrl ? photoUrl : null },
+    }),
+  );
   revalidatePath(`/customers/${id}`);
   return undefined;
 }
@@ -181,11 +196,14 @@ export async function updateCustomerBank(
     return { error: "Bitte die Bankdaten prüfen." };
   }
 
-  await prisma.customerBankAccount.upsert({
-    where: { customerId: id },
-    create: { customerId: id, ...validated.data },
-    update: validated.data,
-  });
+  const { gymId } = await getCurrentEmployee();
+  await withGymScope(gymId, (db) =>
+    db.customerBankAccount.upsert({
+      where: { customerId: id },
+      create: { gymId, customerId: id, ...validated.data },
+      update: validated.data,
+    }),
+  );
   revalidatePath(`/customers/${id}`);
 }
 
@@ -228,9 +246,6 @@ export async function updateCustomerContract(
     return { error: "Bitte die Vertragsdetails prüfen." };
   }
 
-  const customer = await prisma.customer.findUnique({ where: { id } });
-  if (!customer) return { error: "Kunde nicht gefunden." };
-
   const {
     status,
     planId,
@@ -244,21 +259,27 @@ export async function updateCustomerContract(
     cancellationReceivedAt,
   } = validated.data;
 
-  const calc = calculateContractCancellation({
-    joinedAt: customer.joinedAt,
-    termMonths,
-    autoRenewalMonths,
-    noticePeriodMonths,
-    pausedFrom,
-    pausedTo,
-    cancellationReceivedAt,
-  });
+  const { gymId } = await getCurrentEmployee();
 
-  await prisma.$transaction([
-    prisma.customer.update({ where: { id }, data: { status } }),
-    prisma.contractDetail.upsert({
+  const result = await withGymScope(gymId, async (db) => {
+    const customer = await db.customer.findUnique({ where: { id } });
+    if (!customer) return { error: "Kunde nicht gefunden." };
+
+    const calc = calculateContractCancellation({
+      joinedAt: customer.joinedAt,
+      termMonths,
+      autoRenewalMonths,
+      noticePeriodMonths,
+      pausedFrom,
+      pausedTo,
+      cancellationReceivedAt,
+    });
+
+    await db.customer.update({ where: { id }, data: { status } });
+    await db.contractDetail.upsert({
       where: { customerId: id },
       create: {
+        gymId,
         customerId: id,
         planId,
         termMonths,
@@ -289,8 +310,11 @@ export async function updateCustomerContract(
         cancellationEffectiveAt: calc.cancellationEffectiveAt,
         autoRenewed: calc.autoRenewed,
       },
-    }),
-  ]);
+    });
+    return undefined;
+  });
+
+  if (result?.error) return result;
 
   revalidatePath(`/customers/${id}`);
 }
@@ -308,30 +332,36 @@ export async function updateCustomerVoucher(
     return { error: "Bitte einen Gutschein wählen." };
   }
 
-  const voucherType = await prisma.voucherType.findUnique({
-    where: { id: voucherTypeId },
-  });
-  if (!voucherType) return { error: "Gutschein nicht gefunden." };
+  const { gymId } = await getCurrentEmployee();
 
-  const assignedAt = new Date();
-  const validUntil = addMonths(assignedAt, voucherType.validityMonths);
+  const result = await withGymScope(gymId, async (db) => {
+    const voucherType = await db.voucherType.findUnique({ where: { id: voucherTypeId } });
+    if (!voucherType) return { error: "Gutschein nicht gefunden." };
 
-  await prisma.voucherAssignment.upsert({
-    where: { customerId: id },
-    create: {
-      customerId: id,
-      voucherTypeId,
-      assignedAt,
-      validUntil,
-      remainingSessions: voucherType.sessionCount,
-    },
-    update: {
-      voucherTypeId,
-      assignedAt,
-      validUntil,
-      remainingSessions: voucherType.sessionCount,
-    },
+    const assignedAt = new Date();
+    const validUntil = addMonths(assignedAt, voucherType.validityMonths);
+
+    await db.voucherAssignment.upsert({
+      where: { customerId: id },
+      create: {
+        gymId,
+        customerId: id,
+        voucherTypeId,
+        assignedAt,
+        validUntil,
+        remainingSessions: voucherType.sessionCount,
+      },
+      update: {
+        voucherTypeId,
+        assignedAt,
+        validUntil,
+        remainingSessions: voucherType.sessionCount,
+      },
+    });
+    return undefined;
   });
+
+  if (result?.error) return result;
 
   revalidatePath(`/customers/${id}`);
 }
@@ -342,10 +372,14 @@ export async function deleteCustomers(
   const permError = await checkPermission("permCustomers");
   if (permError) return permError;
 
-  const notInactive = await prisma.customer.findMany({
-    where: { id: { in: ids }, status: { not: "INACTIVE" } },
-    select: { firstName: true, lastName: true },
-  });
+  const { gymId } = await getCurrentEmployee();
+
+  const notInactive = await withGymScope(gymId, (db) =>
+    db.customer.findMany({
+      where: { id: { in: ids }, status: { not: "INACTIVE" } },
+      select: { firstName: true, lastName: true },
+    }),
+  );
 
   if (notInactive.length > 0) {
     const names = notInactive.map((c) => `${c.firstName} ${c.lastName}`).join(", ");
@@ -354,7 +388,7 @@ export async function deleteCustomers(
     };
   }
 
-  await prisma.customer.deleteMany({ where: { id: { in: ids } } });
+  await withGymScope(gymId, (db) => db.customer.deleteMany({ where: { id: { in: ids } } }));
   revalidatePath("/customers");
   return {};
 }

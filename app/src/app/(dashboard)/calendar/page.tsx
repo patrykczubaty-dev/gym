@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { addDays, addWeeks, endOfWeek, format, startOfWeek } from "date-fns";
 import { de } from "date-fns/locale";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import { Badge } from "@/components/ui/badge";
 import { EventDialog } from "@/components/calendar/event-dialog";
 import { EventDetailsDialog } from "@/components/calendar/event-details-dialog";
@@ -35,27 +36,30 @@ export default async function CalendarPage({
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
-  const [events, courses, eventTypes, locations] = await Promise.all([
-    prisma.calendarEvent.findMany({
-      where: {
-        startsAt: { gte: weekStart, lt: rangeEnd },
-        ...(location ? { locationId: location } : {}),
-      },
-      orderBy: { startsAt: "asc" },
-      include: {
-        course: true,
-        event: true,
-        location: true,
-        bookings: {
-          where: { status: { in: ["BOOKED", "WAITLISTED"] } },
-          include: { customer: { select: { firstName: true, lastName: true } } },
+  const { gymId } = await getCurrentEmployee();
+  const [events, courses, eventTypes, locations] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.calendarEvent.findMany({
+        where: {
+          startsAt: { gte: weekStart, lt: rangeEnd },
+          ...(location ? { locationId: location } : {}),
         },
-      },
-    }),
-    prisma.course.findMany({ orderBy: { title: "asc" } }),
-    prisma.event.findMany({ orderBy: { title: "asc" } }),
-    prisma.location.findMany({ orderBy: { city: "asc" } }),
-  ]);
+        orderBy: { startsAt: "asc" },
+        include: {
+          course: true,
+          event: true,
+          location: true,
+          bookings: {
+            where: { status: { in: ["BOOKED", "WAITLISTED"] } },
+            include: { customer: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      }),
+      db.course.findMany({ orderBy: { title: "asc" } }),
+      db.event.findMany({ orderBy: { title: "asc" } }),
+      db.location.findMany({ orderBy: { city: "asc" } }),
+    ]),
+  );
 
   const eventsByDay = new Map<string, typeof events>();
   for (const event of events) {

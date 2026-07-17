@@ -1,21 +1,25 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import { Button } from "@/components/ui/button";
 import { EmployeesTable } from "@/components/employees/employees-table";
 import { Plus } from "lucide-react";
 
 export default async function EmployeesPage() {
-  const employees = await prisma.employee.findMany({
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      gender: true,
-      photoUrl: true,
-      leadCourses: { select: { title: true } },
-    },
-  });
+  const { gymId } = await getCurrentEmployee();
+  const employees = await withGymScope(gymId, (db) =>
+    db.employee.findMany({
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
+        photoUrl: true,
+        leadCourses: { select: { title: true } },
+      },
+    }),
+  );
 
   return (
     <div className="space-y-4">

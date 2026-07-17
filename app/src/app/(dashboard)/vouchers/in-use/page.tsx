@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Table,
   TableBody,
@@ -14,13 +15,16 @@ import { VouchersNav } from "@/components/vouchers/vouchers-nav";
 import { formatDateDe } from "@/lib/dates";
 
 export default async function VouchersInUsePage() {
-  const assignments = await prisma.voucherAssignment.findMany({
-    orderBy: { validUntil: "asc" },
-    include: {
-      voucherType: true,
-      customer: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
-    },
-  });
+  const { gymId } = await getCurrentEmployee();
+  const assignments = await withGymScope(gymId, (db) =>
+    db.voucherAssignment.findMany({
+      orderBy: { validUntil: "asc" },
+      include: {
+        voucherType: true,
+        customer: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+      },
+    }),
+  );
 
   return (
     <div className="space-y-4">
@@ -35,7 +39,7 @@ export default async function VouchersInUsePage() {
               <TableHead className="hidden sm:table-cell">Gutscheinart</TableHead>
               <TableHead className="hidden md:table-cell">Kursanzahl offen</TableHead>
               <TableHead className="hidden md:table-cell">Gültig bis</TableHead>
-              <TableHead className="w-16 text-right">Aktion</TableHead>
+              <TableHead className="w-16 text-right">Aktionen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

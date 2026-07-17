@@ -1,7 +1,8 @@
-import { prisma } from "@/lib/prisma";
-import { getCurrentEmployee } from "@/lib/dal";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee, getCurrentGymBranding } from "@/lib/dal";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { SocialApiForm } from "@/components/settings/social-api-form";
+import { BrandingForm } from "@/components/settings/branding-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function SettingsPage() {
@@ -18,15 +19,35 @@ export default async function SettingsPage() {
     );
   }
 
-  const settings = await prisma.settings.upsert({
-    where: { id: 1 },
-    update: {},
-    create: { id: 1 },
-  });
+  const settings = await withGymScope(employee.gymId, (db) =>
+    db.settings.upsert({
+      where: { gymId: employee.gymId },
+      update: {},
+      create: { gymId: employee.gymId },
+    }),
+  );
+  const gym = await getCurrentGymBranding();
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Systeme</h1>
+
+      <div>
+        <h2 className="mb-2 font-medium">Branding</h2>
+        {gym && (
+          <BrandingForm
+            key={gym.updatedAt.getTime()}
+            studioName={gym.name}
+            loginClaim={gym.loginClaim}
+            primaryColor={gym.primaryColor}
+            accentColor={gym.accentColor}
+            logoUrl={gym.logoUrl}
+            logoOnDarkUrl={gym.logoOnDarkUrl}
+            logoOnLightUrl={gym.logoOnLightUrl}
+          />
+        )}
+      </div>
+
       <SettingsForm
         defaultNoticePeriodMonths={settings.defaultNoticePeriodMonths}
         defaultAutoRenewalMonths={settings.defaultAutoRenewalMonths}

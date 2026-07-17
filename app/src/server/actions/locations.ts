@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
 import { verifySession } from "@/lib/dal";
 
 const LocationSchema = z.object({
@@ -18,7 +18,7 @@ export async function createLocation(
   _prevState: LocationFormState,
   formData: FormData,
 ): Promise<LocationFormState> {
-  await verifySession();
+  const { gymId } = await verifySession();
 
   const validated = LocationSchema.safeParse({
     city: formData.get("city"),
@@ -31,7 +31,7 @@ export async function createLocation(
     return { error: "Bitte alle Pflichtfelder ausfüllen." };
   }
 
-  await prisma.location.create({ data: validated.data });
+  await withGymScope(gymId, (db) => db.location.create({ data: { ...validated.data, gymId } }));
   revalidatePath("/locations");
 }
 
@@ -40,7 +40,7 @@ export async function updateLocation(
   _prevState: LocationFormState,
   formData: FormData,
 ): Promise<LocationFormState> {
-  await verifySession();
+  const { gymId } = await verifySession();
 
   const validated = LocationSchema.safeParse({
     city: formData.get("city"),
@@ -53,16 +53,16 @@ export async function updateLocation(
     return { error: "Bitte alle Pflichtfelder ausfüllen." };
   }
 
-  await prisma.location.update({ where: { id }, data: validated.data });
+  await withGymScope(gymId, (db) => db.location.update({ where: { id }, data: validated.data }));
   revalidatePath("/locations");
 }
 
 export async function deleteLocation(id: string): Promise<{ error?: string }> {
-  await verifySession();
+  const { gymId } = await verifySession();
 
-  const customerCount = await prisma.customer.count({
-    where: { locationId: id },
-  });
+  const customerCount = await withGymScope(gymId, (db) =>
+    db.customer.count({ where: { locationId: id } }),
+  );
 
   if (customerCount > 0) {
     return {
@@ -71,7 +71,7 @@ export async function deleteLocation(id: string): Promise<{ error?: string }> {
     };
   }
 
-  await prisma.location.delete({ where: { id } });
+  await withGymScope(gymId, (db) => db.location.delete({ where: { id } }));
   revalidatePath("/locations");
   return {};
 }

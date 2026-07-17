@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { withGymScope } from "@/lib/scoped-prisma";
+import { getCurrentEmployee } from "@/lib/dal";
 import {
   Tabs,
   TabsContent,
@@ -31,14 +32,17 @@ export default async function EmployeeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { gymId } = await getCurrentEmployee();
 
-  const [employee, locations] = await Promise.all([
-    prisma.employee.findUnique({
-      where: { id },
-      include: { payouts: { orderBy: { date: "desc" } } },
-    }),
-    prisma.location.findMany({ orderBy: { city: "asc" } }),
-  ]);
+  const [employee, locations] = await withGymScope(gymId, (db) =>
+    Promise.all([
+      db.employee.findUnique({
+        where: { id },
+        include: { payouts: { orderBy: { date: "desc" } } },
+      }),
+      db.location.findMany({ orderBy: { city: "asc" } }),
+    ]),
+  );
 
   if (!employee) notFound();
 
