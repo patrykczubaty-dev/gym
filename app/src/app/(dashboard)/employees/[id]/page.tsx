@@ -38,7 +38,10 @@ export default async function EmployeeDetailPage({
     Promise.all([
       db.employee.findUnique({
         where: { id },
-        include: { payouts: { orderBy: { date: "desc" } } },
+        include: {
+          payouts: { orderBy: { date: "desc" } },
+          locations: { select: { id: true, city: true } },
+        },
       }),
       db.location.findMany({ orderBy: { city: "asc" } }),
     ]),

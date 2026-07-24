@@ -39,8 +39,8 @@ export function BrandLogo({
       <Image
         src="/logo-dark-bg.png"
         alt={studioName}
-        width={791}
-        height={280}
+        width={2619}
+        height={468}
         priority={priority}
         className={cn("h-auto w-auto object-contain", className)}
       />
@@ -58,16 +58,16 @@ export function BrandLogo({
       <Image
         src="/logo-light-bg.png"
         alt={studioName}
-        width={794}
-        height={282}
+        width={2619}
+        height={468}
         priority={priority}
         className={cn("h-auto w-auto object-contain dark:hidden", className)}
       />
       <Image
         src="/logo-dark-bg.png"
         alt={studioName}
-        width={791}
-        height={280}
+        width={2619}
+        height={468}
         priority={priority}
         className={cn("hidden h-auto w-auto object-contain dark:block", className)}
       />

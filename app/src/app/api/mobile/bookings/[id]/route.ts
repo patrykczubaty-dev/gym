@@ -3,6 +3,7 @@ import { getMobileCustomer } from "@/lib/mobile-auth";
 import { withGymScope } from "@/lib/scoped-prisma";
 import { canCancelBooking } from "@/lib/core/booking-cutoff";
 import { sendExpoPush } from "@/lib/push";
+import { cancelBookingAndNotifyWaitlist } from "@/server/booking-cancellation";
 
 export async function DELETE(
   request: NextRequest,
@@ -38,43 +39,26 @@ export async function DELETE(
       }
     }
 
-    await db.booking.update({ where: { id: booking.id }, data: { status: "CANCELLED" } });
-
-    if (booking.status === "WAITLISTED" && booking.waitlistPosition !== null) {
-      // Nachruecker auf der Warteliste ruecken auf, damit Positionen luecken-
-      // los bleiben.
-      await db.booking.updateMany({
-        where: {
-          calendarEventId: booking.calendarEventId,
-          status: "WAITLISTED",
-          waitlistPosition: { gt: booking.waitlistPosition },
-        },
-        data: { waitlistPosition: { decrement: 1 } },
-      });
-      return { promoted: null } as const;
-    }
-
-    // Ein BOOKED-Platz wurde frei - der Kunde ganz vorne auf der Warteliste
-    // wird per Push informiert, muss den Platz aber selbst aktiv buchen
-    // (bewusste Entscheidung, siehe Mobile-App-Quiz: kein Auto-Booking).
-    const nextWaitlisted = await db.booking.findFirst({
-      where: { calendarEventId: booking.calendarEventId, status: "WAITLISTED" },
-      orderBy: { waitlistPosition: "asc" },
-      include: { customer: true },
+    const notify = await cancelBookingAndNotifyWaitlist(db, {
+      id: booking.id,
+      status: booking.status,
+      calendarEventId: booking.calendarEventId,
+      waitlistPosition: booking.waitlistPosition,
     });
 
-    return { promoted: nextWaitlisted } as const;
+    return { notify } as const;
   });
 
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  if (result.promoted?.customer.expoPushToken) {
+  if (result.notify) {
     await sendExpoPush(
-      result.promoted.customer.expoPushToken,
+      result.notify.expoPushToken,
       "Ein Platz ist frei geworden",
       "Jemand hat storniert - sichere dir jetzt deinen Platz in der App.",
+      { calendarEventId: result.notify.calendarEventId, subjectType: result.notify.subjectType },
     );
   }
 

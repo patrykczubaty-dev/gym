@@ -17,7 +17,7 @@ import { directPrisma } from "@/lib/prisma-direct";
 // Cookie) und alles andere (Gym-Mitarbeiter). Ein Mitarbeiter-Cookie
 // gewaehrt niemals Zugriff auf /platform/* und umgekehrt.
 
-const PUBLIC_ROUTES = ["/login", "/forgot-password"];
+const PUBLIC_ROUTES = ["/login", "/forgot-password", "/impressum", "/datenschutz"];
 // /api/mobile/* wird weiter unten bereits vollstaendig separat behandelt
 // (eigener CORS-/Bearer-Token-Pfad, siehe MOBILE_API_PREFIX) und taucht
 // deshalb hier bewusst nicht auf.

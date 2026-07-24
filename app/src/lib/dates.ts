@@ -17,3 +17,18 @@ export function formatDateDe(date: Date | null | undefined): string {
   const year = d.getFullYear();
   return `${day}.${month}.${year}`;
 }
+
+function formatTimeDe(date: Date): string {
+  return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Events koennen (im Unterschied zu Kursterminen) mehrtägig sein - zeigt bei
+// gleichem Kalendertag das gewohnte "DD.MM.YYYY, HH:MM–HH:MM Uhr", sonst
+// explizit Start- UND Enddatum.
+export function formatEventRange(startsAt: Date, endsAt: Date): string {
+  const sameDay = toDateInputValue(startsAt) === toDateInputValue(endsAt);
+  if (sameDay) {
+    return `${formatDateDe(startsAt)}, ${formatTimeDe(startsAt)}–${formatTimeDe(endsAt)} Uhr`;
+  }
+  return `${formatDateDe(startsAt)} ${formatTimeDe(startsAt)} Uhr – ${formatDateDe(endsAt)} ${formatTimeDe(endsAt)} Uhr`;
+}

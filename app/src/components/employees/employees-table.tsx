@@ -13,9 +13,11 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { HexAvatar } from "@/components/ui/hex-avatar";
 import { deleteEmployees } from "@/server/actions/employees";
 import { Trash2 } from "lucide-react";
+import { PERMISSION_KEYS, PERMISSION_LABELS, type PermissionKey } from "@/lib/enums";
 
 type Employee = {
   id: string;
@@ -24,7 +26,19 @@ type Employee = {
   gender: string;
   photoUrl: string | null;
   leadCourses: { title: string }[];
-};
+  locations: { city: string }[];
+} & Record<PermissionKey, boolean>;
+
+// Zeigt auf einen Blick, wer Admin-Rechte hat bzw. welche Bereiche
+// freigeschaltet sind, statt dass ein Audit jeden Mitarbeiter einzeln
+// geoeffnet werden muss (siehe UI/UX-Review: Berechtigungen waren aus der
+// Uebersicht heraus nicht erkennbar).
+function roleSummary(employee: Employee): string {
+  if (employee.permAdmin) return "Administrator";
+  const granted = PERMISSION_KEYS.filter((key) => key !== "permAdmin" && employee[key]);
+  if (granted.length === 0) return "—";
+  return granted.map((key) => PERMISSION_LABELS[key].replace(" Verwaltung", "")).join(", ");
+}
 
 export function EmployeesTable({ employees }: { employees: Employee[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -71,6 +85,8 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
               <TableHead className="w-10" />
               <TableHead>Vorname, Name</TableHead>
               <TableHead className="hidden sm:table-cell">Geschlecht</TableHead>
+              <TableHead className="hidden lg:table-cell">Standort</TableHead>
+              <TableHead className="hidden lg:table-cell">Rolle</TableHead>
               <TableHead className="hidden md:table-cell">Kurse</TableHead>
             </TableRow>
           </TableHeader>
@@ -109,6 +125,16 @@ export function EmployeesTable({ employees }: { employees: Employee[] }) {
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
                   {employee.gender === "w" ? "W" : "M"}
+                </TableCell>
+                <TableCell className="hidden max-w-xs truncate text-muted-foreground lg:table-cell">
+                  {employee.locations.map((l) => l.city).join(", ")}
+                </TableCell>
+                <TableCell className="hidden max-w-xs truncate lg:table-cell">
+                  {employee.permAdmin ? (
+                    <Badge>Administrator</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">{roleSummary(employee)}</span>
+                  )}
                 </TableCell>
                 <TableCell className="hidden max-w-xs truncate text-muted-foreground md:table-cell">
                   {employee.leadCourses.length > 0

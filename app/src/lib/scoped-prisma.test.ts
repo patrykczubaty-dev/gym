@@ -43,7 +43,7 @@ describe("Mandantentrennung (RLS + Scoped-Prisma-Client)", () => {
         birthday: new Date(1990, 0, 1),
         status: "ACTIVE",
         contractType: "TRIAL",
-        locationId: locationA.id,
+        locations: { connect: [{ id: locationA.id }] },
         joinedAt: new Date(),
       },
     });
@@ -56,7 +56,7 @@ describe("Mandantentrennung (RLS + Scoped-Prisma-Client)", () => {
         birthday: new Date(1990, 0, 1),
         status: "ACTIVE",
         contractType: "TRIAL",
-        locationId: locationB.id,
+        locations: { connect: [{ id: locationB.id }] },
         joinedAt: new Date(),
       },
     });
@@ -120,7 +120,7 @@ describe("Mandantentrennung (RLS + Scoped-Prisma-Client)", () => {
           birthday: new Date(1990, 0, 1),
           status: "ACTIVE",
           contractType: "TRIAL",
-          locationId: locationA.id,
+          locations: { connect: [{ id: locationA.id }] },
           joinedAt: new Date(),
         },
       }),

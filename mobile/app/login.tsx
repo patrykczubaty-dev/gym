@@ -1,8 +1,15 @@
 import { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, Image, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../lib/auth-context";
 import { ApiError } from "../lib/api";
+import { theme, DEFAULT_PRIMARY_COLOR } from "../lib/theme";
+import { brandGradient } from "../lib/color";
+import { Label } from "../components/Label";
+
+const gradientColors = brandGradient(DEFAULT_PRIMARY_COLOR);
+const anselvoLogo = require("../assets/logo-anselvo.png");
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -22,7 +29,7 @@ export default function LoginScreen() {
       await requestOtp(email);
       router.push({ pathname: "/verify", params: { email } });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Etwas ist schiefgelaufen.");
+      setError(err instanceof ApiError ? err.message : "Etwas ist schiefgelaufen. Bitte versuche es erneut.");
     } finally {
       setPending(false);
     }
@@ -30,12 +37,15 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
+      <Image source={anselvoLogo} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Willkommen zurück</Text>
       <Text style={styles.subtitle}>Melde dich mit deiner E-Mail-Adresse an.</Text>
 
+      <Label>E-Mail-Adresse</Label>
       <TextInput
         style={styles.input}
-        placeholder="E-Mail-Adresse"
+        placeholder="name@beispiel.de"
+        placeholderTextColor={theme.mutedForeground}
         autoCapitalize="none"
         autoComplete="email"
         keyboardType="email-address"
@@ -45,32 +55,31 @@ export default function LoginScreen() {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      <Pressable style={styles.button} onPress={handleSubmit} disabled={pending}>
-        {pending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Code anfordern</Text>}
+      <Pressable onPress={handleSubmit} disabled={pending}>
+        <LinearGradient colors={gradientColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.button}>
+          {pending ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Code anfordern</Text>}
+        </LinearGradient>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
-  title: { fontSize: 24, fontWeight: "600" },
-  subtitle: { fontSize: 14, color: "#6b7280", marginBottom: 12 },
+  container: { flex: 1, justifyContent: "center", padding: 24, gap: 12, backgroundColor: theme.background },
+  logo: { width: 140, height: 25, alignSelf: "flex-start", marginBottom: 12 },
+  title: { fontSize: 26, fontWeight: "800", color: theme.foreground },
+  subtitle: { fontSize: 14, color: theme.mutedForeground, marginBottom: 12 },
   input: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  error: { color: "#dc2626", fontSize: 13 },
-  button: {
-    backgroundColor: "#e2483d",
-    borderRadius: 10,
+    borderColor: theme.border,
+    borderRadius: 10.5,
+    paddingHorizontal: 16,
     paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 8,
+    fontSize: 16,
+    backgroundColor: theme.card,
+    color: theme.foreground,
   },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  error: { color: theme.destructive, fontSize: 13 },
+  button: { borderRadius: 10.5, paddingVertical: 15, alignItems: "center", marginTop: 8 },
+  buttonText: { color: theme.primaryForeground, fontWeight: "700", fontSize: 16 },
 });

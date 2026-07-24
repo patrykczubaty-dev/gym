@@ -22,8 +22,12 @@ const STATUS_LABEL: Record<string, string> = {
   DECLINED: "Abgelehnt",
 };
 
-const STATUS_VARIANT: Record<string, "outline" | "secondary" | "success" | "destructive"> = {
-  OPEN: "outline",
+// OPEN nutzt "warning" statt "outline" (wie zuvor), damit es sich vom
+// neutral-grauen PROPOSED unterscheidet - beide hatten denselben grauen
+// Status-Punkt, obwohl sie unterschiedliche Dringlichkeit haben (OPEN
+// braucht eine Erstantwort vom Team, PROPOSED wartet auf den Kunden).
+const STATUS_VARIANT: Record<string, "outline" | "secondary" | "success" | "destructive" | "warning"> = {
+  OPEN: "warning",
   PROPOSED: "secondary",
   ACCEPTED: "success",
   DECLINED: "destructive",

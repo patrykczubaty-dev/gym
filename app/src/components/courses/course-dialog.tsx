@@ -34,6 +34,9 @@ type Course = {
   participantLimit: number;
   trialPossible: boolean;
   trialDate: Date | null;
+  cancellationCutoffHours: number | null;
+  waitlistLimit: number | null;
+  durationMinutes: number | null;
   locations: { id: string }[];
 };
 
@@ -41,10 +44,14 @@ export function CourseDialog({
   course,
   employees,
   locations,
+  defaultWaitlistLimit,
+  defaultCourseDurationMinutes,
 }: {
   course?: Course;
   employees: { id: string; firstName: string; lastName: string }[];
   locations: { id: string; city: string }[];
+  defaultWaitlistLimit: number | null;
+  defaultCourseDurationMinutes: number;
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -196,6 +203,49 @@ export function CourseDialog({
               />
             </div>
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="cancellationCutoffHours">Stornofrist (Stunden vorher)</Label>
+            <Input
+              id="cancellationCutoffHours"
+              name="cancellationCutoffHours"
+              type="number"
+              min={0}
+              placeholder="Leer = jederzeit stornierbar"
+              defaultValue={course?.cancellationCutoffHours ?? ""}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="waitlistLimit">Wartelisten-Länge</Label>
+              <Input
+                id="waitlistLimit"
+                name="waitlistLimit"
+                type="number"
+                min={0}
+                placeholder={
+                  defaultWaitlistLimit === null
+                    ? "Leer = Standard (unbegrenzt)"
+                    : `Leer = Standard (${defaultWaitlistLimit})`
+                }
+                defaultValue={course?.waitlistLimit ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="durationMinutes">Kursdauer (Min.)</Label>
+              <Input
+                id="durationMinutes"
+                name="durationMinutes"
+                type="number"
+                min={5}
+                max={720}
+                step={5}
+                placeholder={`Leer = Standard (${defaultCourseDurationMinutes})`}
+                defaultValue={course?.durationMinutes ?? ""}
+              />
+            </div>
+          </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>

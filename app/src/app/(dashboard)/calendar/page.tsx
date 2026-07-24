@@ -37,7 +37,7 @@ export default async function CalendarPage({
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   const { gymId } = await getCurrentEmployee();
-  const [events, courses, eventTypes, locations] = await withGymScope(gymId, (db) =>
+  const [events, courses, locations, settings] = await withGymScope(gymId, (db) =>
     Promise.all([
       db.calendarEvent.findMany({
         where: {
@@ -56,8 +56,8 @@ export default async function CalendarPage({
         },
       }),
       db.course.findMany({ orderBy: { title: "asc" } }),
-      db.event.findMany({ orderBy: { title: "asc" } }),
       db.location.findMany({ orderBy: { city: "asc" } }),
+      db.settings.upsert({ where: { gymId }, update: {}, create: { gymId } }),
     ]),
   );
 
@@ -94,7 +94,11 @@ export default async function CalendarPage({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Kalender</h1>
-        <EventDialog courses={courses} eventTypes={eventTypes} locations={locations} />
+        <EventDialog
+          courses={courses}
+          locations={locations}
+          defaultCourseDurationMinutes={settings.defaultCourseDurationMinutes}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -194,12 +198,20 @@ export default async function CalendarPage({
                   return (
                     <EventDetailsDialog
                       key={event.id}
+                      eventId={event.id}
+                      seriesId={event.seriesId}
+                      subjectType={event.courseId ? "course" : "event"}
+                      subjectId={(event.courseId ?? event.eventId)!}
+                      locationId={event.locationId}
                       courseTitle={title}
                       startsAt={event.startsAt}
+                      endsAt={event.endsAt}
                       locationCity={event.location.city}
                       capacity={event.capacity}
                       occupancy={occupancy}
                       bookings={event.bookings}
+                      courses={courses}
+                      locations={locations}
                     >
                       <div className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-muted/30">
                         <div className="flex items-center gap-3">

@@ -87,7 +87,7 @@ export async function createGym(
     await tx.employee.create({
       data: {
         gymId: gym.id,
-        locationId: location.id,
+        locations: { connect: [{ id: location.id }] },
         firstName: adminFirstName,
         lastName: adminLastName,
         email: adminEmail,

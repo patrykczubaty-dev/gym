@@ -116,7 +116,7 @@ export async function GET(
               phone: slot.trial.phone,
               status: "ACTIVE",
               contractType: "TRIAL",
-              locationId: slot.trial.locationId,
+              locations: { connect: [{ id: slot.trial.locationId }] },
               joinedAt: new Date(),
               originTrialId: slot.trialId,
             },

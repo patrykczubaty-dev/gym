@@ -195,7 +195,7 @@ export default async function DashboardPage() {
           <CardContent className="space-y-1">
             {soonCancellable.length === 0 && (
               <div className="flex flex-col items-start gap-2 py-1 text-sm text-muted-foreground">
-                <span className="hex-clip size-7 border border-dashed border-border" />
+                <span className="hex-clip size-7 bg-muted" />
                 Keine Verträge mit Kündigungsfrist in den nächsten 30 Tagen.
               </div>
             )}

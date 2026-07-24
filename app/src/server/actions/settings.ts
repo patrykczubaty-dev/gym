@@ -12,6 +12,8 @@ export type ActionState = { error: string } | undefined;
 const Schema = z.object({
   defaultNoticePeriodMonths: z.coerce.number().int().min(0),
   defaultAutoRenewalMonths: z.coerce.number().int().min(0),
+  defaultWaitlistLimit: z.coerce.number().int().min(0).optional().nullable(),
+  defaultCourseDurationMinutes: z.coerce.number().int().min(5).max(720),
 });
 
 export async function updateSettings(
@@ -29,6 +31,8 @@ export async function updateSettings(
   const validated = Schema.safeParse({
     defaultNoticePeriodMonths: formData.get("defaultNoticePeriodMonths"),
     defaultAutoRenewalMonths: formData.get("defaultAutoRenewalMonths"),
+    defaultWaitlistLimit: formData.get("defaultWaitlistLimit") || null,
+    defaultCourseDurationMinutes: formData.get("defaultCourseDurationMinutes"),
   });
   if (!validated.success) return { error: "Bitte die Werte prüfen." };
 

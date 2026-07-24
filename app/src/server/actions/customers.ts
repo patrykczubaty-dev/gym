@@ -18,23 +18,32 @@ import { addMonths } from "date-fns";
 
 export type ActionState = { error: string } | undefined;
 
-const PersonSchema = z.object({
-  firstName: z.string().min(1, { error: "Vorname ist erforderlich." }),
-  lastName: z.string().min(1, { error: "Nachname ist erforderlich." }),
-  gender: GenderEnum,
-  birthday: z.coerce.date({ error: "Bitte ein gültiges Geburtsdatum angeben." }),
-  street: z.string().optional(),
-  houseNumber: z.string().optional(),
-  zip: z.string().optional(),
-  city: z.string().optional(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
-  mobile: z.string().optional(),
-  notes: z.string().optional(),
-  locationId: z.string().min(1, { error: "Bitte einen Standort wählen." }),
-  joinedAt: z.coerce.date({ error: "Bitte ein gültiges Eintrittsdatum angeben." }),
-  contractType: ContractTypeEnum,
-});
+const PersonSchema = z
+  .object({
+    firstName: z.string().min(1, { error: "Vorname ist erforderlich." }),
+    lastName: z.string().min(1, { error: "Nachname ist erforderlich." }),
+    gender: GenderEnum,
+    birthday: z.coerce.date({ error: "Bitte ein gültiges Geburtsdatum angeben." }),
+    street: z.string().optional(),
+    houseNumber: z.string().optional(),
+    zip: z.string().optional(),
+    city: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    mobile: z.string().optional(),
+    notes: z.string().optional(),
+    // Standort ist Mehrfachauswahl statt Einzelwert - allLocations=true
+    // bedeutet "alle Standorte inkl. zukuenftiger", locationIds nur relevant
+    // wenn allLocations=false (siehe LocationMultiSelect-Komponente).
+    allLocations: z.string().transform((v) => v === "true"),
+    locationIds: z.array(z.string()),
+    joinedAt: z.coerce.date({ error: "Bitte ein gültiges Eintrittsdatum angeben." }),
+    contractType: ContractTypeEnum,
+  })
+  .refine((data) => data.allLocations || data.locationIds.length > 0, {
+    error: "Bitte mindestens einen Standort wählen oder \"Alle Standorte\".",
+    path: ["locationIds"],
+  });
 
 export async function createCustomer(
   _prevState: ActionState,
@@ -55,7 +64,8 @@ export async function createCustomer(
     email: formData.get("email") || undefined,
     phone: formData.get("phone") || undefined,
     mobile: formData.get("mobile") || undefined,
-    locationId: formData.get("locationId"),
+    allLocations: formData.get("allLocations"),
+    locationIds: formData.getAll("locationIds"),
     joinedAt: formData.get("joinedAt"),
     contractType: formData.get("contractType"),
   });
@@ -64,14 +74,21 @@ export async function createCustomer(
     return { error: "Bitte alle Pflichtfelder prüfen." };
   }
 
-  const { contractType, ...rest } = validated.data;
+  const { contractType, allLocations, locationIds, ...rest } = validated.data;
   const { gymId } = await getCurrentEmployee();
 
   let customerId: string | undefined;
 
   const result = await withGymScope(gymId, async (db) => {
     const customer = await db.customer.create({
-      data: { ...rest, gymId, contractType, status: "ACTIVE" },
+      data: {
+        ...rest,
+        gymId,
+        contractType,
+        status: "ACTIVE",
+        allLocations,
+        locations: allLocations ? undefined : { connect: locationIds.map((id) => ({ id })) },
+      },
     });
     customerId = customer.id;
 
@@ -137,7 +154,8 @@ export async function updateCustomerPerson(
     phone: formData.get("phone") || undefined,
     mobile: formData.get("mobile") || undefined,
     notes: formData.get("notes") || undefined,
-    locationId: formData.get("locationId"),
+    allLocations: formData.get("allLocations"),
+    locationIds: formData.getAll("locationIds"),
     joinedAt: formData.get("joinedAt"),
     contractType: formData.get("contractType"),
   });
@@ -146,8 +164,18 @@ export async function updateCustomerPerson(
     return { error: "Bitte alle Pflichtfelder prüfen." };
   }
 
+  const { allLocations, locationIds, ...rest } = validated.data;
   const { gymId } = await getCurrentEmployee();
-  await withGymScope(gymId, (db) => db.customer.update({ where: { id }, data: validated.data }));
+  await withGymScope(gymId, (db) =>
+    db.customer.update({
+      where: { id },
+      data: {
+        ...rest,
+        allLocations,
+        locations: { set: allLocations ? [] : locationIds.map((id) => ({ id })) },
+      },
+    }),
+  );
   revalidatePath(`/customers/${id}`);
 }
 

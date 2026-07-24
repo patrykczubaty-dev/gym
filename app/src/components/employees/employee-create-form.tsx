@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LocationMultiSelect } from "@/components/shared/location-multi-select";
 import { createEmployee } from "@/server/actions/employees";
 import { GENDER_LABELS } from "@/lib/enums";
 
@@ -46,21 +47,12 @@ export function EmployeeCreateForm({ locations }: { locations: Location[] }) {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="locationId" required>Am Standort</Label>
-          <Select name="locationId" defaultValue={locations[0]?.id} required>
-            <SelectTrigger id="locationId" className="w-full">
-              <SelectValue>
-                {(v: string) => locations.find((l) => l.id === v)?.city}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {locations.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.city}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="locationIds" required>Am Standort</Label>
+          <LocationMultiSelect
+            locations={locations}
+            defaultLocationIds={locations[0] ? [locations[0].id] : []}
+            showAllOption={false}
+          />
         </div>
       </div>
 

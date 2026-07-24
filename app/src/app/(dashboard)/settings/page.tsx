@@ -51,6 +51,8 @@ export default async function SettingsPage() {
       <SettingsForm
         defaultNoticePeriodMonths={settings.defaultNoticePeriodMonths}
         defaultAutoRenewalMonths={settings.defaultAutoRenewalMonths}
+        defaultWaitlistLimit={settings.defaultWaitlistLimit}
+        defaultCourseDurationMinutes={settings.defaultCourseDurationMinutes}
       />
       <div>
         <h2 className="mb-2 font-medium">Facebook &amp; Instagram API</h2>

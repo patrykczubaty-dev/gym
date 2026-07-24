@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LocationMultiSelect } from "@/components/shared/location-multi-select";
 import { createCustomer } from "@/server/actions/customers";
 import { toDateInputValue } from "@/lib/dates";
 import { GENDER_LABELS, CONTRACT_TYPE_LABELS } from "@/lib/enums";
@@ -69,23 +70,12 @@ export function CustomerCreateForm({ locations }: { locations: Location[] }) {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="locationId" required>
-            Am Standort
-          </Label>
-          <Select name="locationId" defaultValue={locations[0]?.id} required>
-            <SelectTrigger id="locationId" className="w-full">
-              <SelectValue>
-                {(v: string) => locations.find((l) => l.id === v)?.city}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {locations.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.city}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label required>Standorte</Label>
+          <LocationMultiSelect
+            locations={locations}
+            defaultLocationIds={locations[0] ? [locations[0].id] : []}
+            defaultAllLocations={false}
+          />
         </div>
       </div>
 

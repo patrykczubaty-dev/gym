@@ -12,6 +12,8 @@ export type Customer = {
   contractType: string;
 };
 
+export type WeeklyQuota = { limit: number; usedThisWeek: number } | null;
+
 export type CourseEvent = {
   id: string;
   course: { id: string; title: string; description: string | null; trainer: string };
@@ -20,9 +22,17 @@ export type CourseEvent = {
   endsAt: string;
   capacity: number;
   bookedCount: number;
+  waitlistCount: number;
   occupancy: "green" | "yellow" | "red";
   ownBookingStatus: "BOOKED" | "WAITLISTED" | null;
   ownWaitlistPosition: number | null;
+  ownBookingId: string | null;
+  canCancel: boolean;
+  cancellationCutoffHours: number | null;
+  // Kontingent der Kalenderwoche, in der DIESER Termin liegt (siehe
+  // api/mobile/courses/route.ts) - nicht global, da die 14-Tage-Liste
+  // mehrere Wochen ueberspannen kann.
+  weeklyQuota: WeeklyQuota;
 };
 
 export type Booking = {
@@ -30,13 +40,21 @@ export type Booking = {
   status: "BOOKED" | "WAITLISTED";
   waitlistPosition: number | null;
   calendarEventId: string;
-  course: { id: string; title: string } | null;
+  course: { id: string; title: string; description: string | null; trainer: string } | null;
+  event: { title: string; description: string | null } | null;
   location: { city: string };
   startsAt: string;
   endsAt: string;
+  canCancel: boolean;
+  cancellationCutoffHours: number | null;
+  capacity: number;
+  bookedCount: number;
+  waitlistCount: number;
+  occupancy: "green" | "yellow" | "red";
 };
 
 export type Profile = {
+  id: string;
   firstName: string;
   lastName: string;
   email: string | null;
@@ -68,4 +86,62 @@ export type MeResponse = {
   profile: Profile;
   contract: Contract | null;
   voucher: Voucher | null;
+  weeklyQuota: WeeklyQuota;
+};
+
+export type Participant = { name: string; isMe: boolean; position?: number | null };
+
+export type ParticipantsResponse = {
+  booked: Participant[];
+  waitlisted: Participant[];
+};
+
+export type EventItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  location: { city: string };
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  bookedCount: number;
+  waitlistCount: number;
+  occupancy: "green" | "yellow" | "red";
+  ownBookingStatus: "BOOKED" | "WAITLISTED" | null;
+  ownWaitlistPosition: number | null;
+  ownBookingId: string | null;
+  canCancel: boolean;
+  cancellationCutoffHours: number | null;
+};
+
+export type Favorite = {
+  courseId: string;
+  courseTitle: string;
+  nextEvent: {
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    trainer: string;
+    description: string | null;
+    location: { city: string };
+    capacity: number;
+    bookedCount: number;
+    waitlistCount: number;
+    occupancy: "green" | "yellow" | "red";
+    ownBookingStatus: "BOOKED" | "WAITLISTED" | null;
+    ownBookingId: string | null;
+    canCancel: boolean;
+    isFull: boolean;
+    weeklyQuota: WeeklyQuota;
+    cancellationCutoffHours: number | null;
+  } | null;
+};
+
+export type StatsResponse = {
+  totalBookings: number;
+  byCourse: { courseTitle: string; count: number }[];
+  weekStreak: number;
+  monthlyCount: number;
+  weeklyBreakdown: { weekLabel: string; count: number }[];
+  recentVisits: { courseTitle: string; startsAt: string; location: string }[];
 };

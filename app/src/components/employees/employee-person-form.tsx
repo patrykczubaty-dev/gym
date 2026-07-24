@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LocationMultiSelect } from "@/components/shared/location-multi-select";
 import { updateEmployeePerson } from "@/server/actions/employees";
 import { toDateInputValue } from "@/lib/dates";
 import { GENDER_LABELS } from "@/lib/enums";
@@ -23,7 +24,7 @@ type Employee = {
   gender: string;
   birthday: Date;
   employeeSince: Date;
-  locationId: string;
+  locations: { id: string; city: string }[];
   street: string | null;
   zip: string | null;
   city: string | null;
@@ -70,21 +71,12 @@ export function EmployeePersonForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="locationId" required>Am Standort</Label>
-          <Select name="locationId" defaultValue={employee.locationId} required>
-            <SelectTrigger id="locationId" className="w-full">
-              <SelectValue>
-                {(v: string) => locations.find((l) => l.id === v)?.city}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {locations.map((l) => (
-                <SelectItem key={l.id} value={l.id}>
-                  {l.city}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="locationIds" required>Am Standort</Label>
+          <LocationMultiSelect
+            locations={locations}
+            defaultLocationIds={employee.locations.map((l) => l.id)}
+            showAllOption={false}
+          />
         </div>
       </div>
 

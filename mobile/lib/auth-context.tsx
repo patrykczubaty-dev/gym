@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { getItem, setItem, deleteItem } from "./storage";
 import { apiFetch } from "./api";
-import type { Customer } from "./types";
+import type { Customer, MeResponse } from "./types";
 
 const TOKEN_KEY = "beeplus_customer_token";
 
@@ -22,8 +22,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    getItem(TOKEN_KEY).then((stored) => {
+    getItem(TOKEN_KEY).then(async (stored) => {
       setToken(stored);
+      // Nur der Token wird persistiert (siehe storage.ts) - beim App-Neustart
+      // muss die Kundenidentitaet (fuer z.B. die Begruessung) separat
+      // nachgeladen werden, sonst bleibt customer bis zum naechsten Login null.
+      if (stored) {
+        try {
+          const me = await apiFetch<MeResponse>("/api/mobile/me", { token: stored });
+          setCustomer({
+            id: me.profile.id,
+            firstName: me.profile.firstName,
+            lastName: me.profile.lastName,
+            email: me.profile.email,
+            status: me.profile.status,
+            contractType: me.profile.contractType,
+          });
+        } catch {
+          // Token ungueltig/abgelaufen - Screens, die customer brauchen,
+          // fangen den fehlenden Wert ab; ein harter Logout hier waere zu
+          // aggressiv fuer einen einzelnen fehlgeschlagenen Request beim Start.
+        }
+      }
       setIsLoading(false);
     });
   }, []);

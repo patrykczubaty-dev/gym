@@ -25,8 +25,7 @@ import { createCalendarEvent } from "@/server/actions/calendar";
 import { toDateInputValue } from "@/lib/dates";
 import { Plus } from "lucide-react";
 
-type Course = { id: string; title: string; participantLimit: number };
-type EventType = { id: string; title: string; participantLimit: number };
+type Course = { id: string; title: string; participantLimit: number; durationMinutes: number | null };
 type Location = { id: string; city: string };
 
 const WEEKDAY_LABELS = [
@@ -46,21 +45,18 @@ function nextDecember31(): string {
 
 export function EventDialog({
   courses,
-  eventTypes,
   locations,
+  defaultCourseDurationMinutes,
 }: {
   courses: Course[];
-  eventTypes: EventType[];
   locations: Location[];
+  defaultCourseDurationMinutes: number;
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<"single" | "weekly">("single");
-  const [subjectType, setSubjectType] = useState<"course" | "event">("course");
   const [noEndDate, setNoEndDate] = useState(false);
   const [pending, startTransition] = useTransition();
-
-  const subjects = subjectType === "course" ? courses : eventTypes;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,7 +80,6 @@ export function EventDialog({
         if (next) {
           setError(undefined);
           setMode("single");
-          setSubjectType("course");
           setNoEndDate(false);
         }
       }}
@@ -95,7 +90,7 @@ export function EventDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Kalendertermin hinzufügen</DialogTitle>
+          <DialogTitle>Kurstermin hinzufügen</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -121,51 +116,35 @@ export function EventDialog({
             </RadioGroup>
           </div>
 
-          <div className="space-y-2">
-            <Label>Kurs oder Event</Label>
-            <RadioGroup
-              name="subjectType"
-              value={subjectType}
-              onValueChange={(v) => setSubjectType(v as "course" | "event")}
-              className="flex gap-4"
-            >
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="course" id="subject-course" />
-                <Label htmlFor="subject-course" className="font-normal">
-                  Kurs
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="event" id="subject-event" />
-                <Label htmlFor="subject-event" className="font-normal">
-                  Event
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
+          <input type="hidden" name="subjectType" value="course" />
           <div className="space-y-2">
             <Label htmlFor="subjectId" required>
-              {subjectType === "course" ? "Kurs" : "Event"}
+              Kurs
             </Label>
             <Select
-              key={subjectType}
               name="subjectId"
               required
               onValueChange={(value) => {
-                const subject = subjects.find((c) => c.id === value);
+                const subject = courses.find((c) => c.id === value);
                 const capacityInput = document.getElementById(
                   "capacity",
                 ) as HTMLInputElement | null;
                 if (subject && capacityInput)
                   capacityInput.value = String(subject.participantLimit);
+
+                const durationInput = document.getElementById(
+                  "durationMinutes",
+                ) as HTMLInputElement | null;
+                if (durationInput) {
+                  durationInput.value = String(subject?.durationMinutes ?? defaultCourseDurationMinutes);
+                }
               }}
             >
               <SelectTrigger id="subjectId" className="w-full">
                 <SelectValue placeholder="Bitte wählen" />
               </SelectTrigger>
               <SelectContent>
-                {subjects.map((s) => (
+                {courses.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {s.title}
                   </SelectItem>
@@ -288,9 +267,31 @@ export function EventDialog({
             </>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="capacity">Teilnehmer-Kapazität</Label>
-            <Input id="capacity" name="capacity" type="number" min={1} defaultValue={10} required />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="durationMinutes">Dauer (Minuten)</Label>
+              <Input
+                id="durationMinutes"
+                name="durationMinutes"
+                type="number"
+                min={5}
+                max={720}
+                step={5}
+                defaultValue={defaultCourseDurationMinutes}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="capacity">Teilnehmer-Kapazität</Label>
+              <Input
+                id="capacity"
+                name="capacity"
+                type="number"
+                min={1}
+                defaultValue={10}
+                required
+              />
+            </div>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

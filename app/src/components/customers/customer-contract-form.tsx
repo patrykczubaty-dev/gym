@@ -40,7 +40,8 @@ type Customer = {
   id: string;
   status: string;
   joinedAt: Date;
-  location: { city: string };
+  allLocations: boolean;
+  locations: { city: string }[];
 };
 
 type ContractPlan = { id: string; name: string; weeklyLimit: number | null };
@@ -88,7 +89,11 @@ export function CustomerContractForm({
         <div className="mt-4 grid grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="locationDisplay">Am Standort</Label>
-            <Input id="locationDisplay" value={customer.location.city} disabled />
+            <Input
+              id="locationDisplay"
+              value={customer.allLocations ? "Alle Standorte" : customer.locations.map((l) => l.city).join(", ")}
+              disabled
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="planId" required>

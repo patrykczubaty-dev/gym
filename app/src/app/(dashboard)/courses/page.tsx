@@ -27,7 +27,7 @@ export default async function CoursesPage() {
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
 
-  const [courses, employees, locations, todaysEvents] = await withGymScope(gymId, (db) =>
+  const [courses, employees, locations, todaysEvents, settings] = await withGymScope(gymId, (db) =>
     Promise.all([
       db.course.findMany({
         orderBy: { title: "asc" },
@@ -40,6 +40,7 @@ export default async function CoursesPage() {
         orderBy: { startsAt: "asc" },
         include: { bookings: { where: { status: "BOOKED" } } },
       }),
+      db.settings.upsert({ where: { gymId }, update: {}, create: { gymId } }),
     ]),
   );
 
@@ -56,7 +57,12 @@ export default async function CoursesPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Kurse</h1>
-        <CourseDialog employees={employees} locations={locations} />
+        <CourseDialog
+          employees={employees}
+          locations={locations}
+          defaultWaitlistLimit={settings.defaultWaitlistLimit}
+          defaultCourseDurationMinutes={settings.defaultCourseDurationMinutes}
+        />
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-background">
@@ -118,7 +124,13 @@ export default async function CoursesPage() {
                     {course.locations.map((l) => l.city).join(", ")}
                   </TableCell>
                   <TableCell className="flex justify-end gap-1">
-                    <CourseDialog course={course} employees={employees} locations={locations} />
+                    <CourseDialog
+                      course={course}
+                      employees={employees}
+                      locations={locations}
+                      defaultWaitlistLimit={settings.defaultWaitlistLimit}
+                      defaultCourseDurationMinutes={settings.defaultCourseDurationMinutes}
+                    />
                     <DeleteCourseButton id={course.id} />
                   </TableCell>
                 </TableRow>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -277,6 +278,9 @@ function LogoFileField({
   currentUrl: string | null;
   onChange: (file: File | undefined) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+
   return (
     <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
@@ -288,13 +292,32 @@ function LogoFileField({
           className="h-8 w-auto max-w-full rounded border border-input bg-muted/40 object-contain p-1"
         />
       )}
-      <Input
+      {/* Natives file-Input bleibt fuer die eigentliche Auswahl zustaendig,
+          wird aber ausgeblendet - dessen Browser-Chrome ("Choose File ...")
+          liess sich ueber Tailwinds file:-Utilities nicht zuverlaessig an
+          das sonst durchgaengige Design angleichen (UI/UX-Review). */}
+      <input
+        ref={inputRef}
         id={id}
         name={name}
         type="file"
         accept="image/svg+xml,image/png,image/jpeg,image/webp"
-        onChange={(e) => onChange(e.target.files?.[0])}
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          setFileName(file?.name ?? null);
+          onChange(file);
+        }}
       />
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" onClick={() => inputRef.current?.click()}>
+          <Upload className="size-4" />
+          Datei auswählen
+        </Button>
+        <span className="truncate text-sm text-muted-foreground">
+          {fileName ?? "Keine Datei ausgewählt"}
+        </span>
+      </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );

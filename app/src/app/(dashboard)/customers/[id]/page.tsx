@@ -46,7 +46,7 @@ export default async function CustomerDetailPage({
       db.customer.findUnique({
         where: { id },
         include: {
-          location: true,
+          locations: true,
           bankAccount: true,
           contract: true,
           voucher: { include: { voucherType: true } },

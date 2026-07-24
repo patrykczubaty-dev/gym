@@ -18,7 +18,9 @@ const PersonSchema = z.object({
   gender: GenderEnum,
   birthday: z.coerce.date({ error: "Bitte ein gültiges Geburtsdatum angeben." }),
   employeeSince: z.coerce.date({ error: "Bitte ein gültiges Datum angeben." }),
-  locationId: z.string().min(1, { error: "Bitte einen Standort wählen." }),
+  // Mehrfachauswahl statt Einzel-Standort (analog zu Customer), siehe
+  // LocationMultiSelect-Komponente.
+  locationIds: z.array(z.string()).min(1, { error: "Bitte mindestens einen Standort wählen." }),
   street: z.string().optional(),
   zip: z.string().optional(),
   city: z.string().optional(),
@@ -41,7 +43,7 @@ export async function createEmployee(
     gender: formData.get("gender"),
     birthday: formData.get("birthday"),
     employeeSince: formData.get("employeeSince"),
-    locationId: formData.get("locationId"),
+    locationIds: formData.getAll("locationIds"),
     street: formData.get("street") || undefined,
     zip: formData.get("zip") || undefined,
     city: formData.get("city") || undefined,
@@ -68,9 +70,16 @@ export async function createEmployee(
     return { error: "Ein Mitarbeiter mit dieser E-Mail existiert bereits." };
   }
 
+  const { locationIds, ...rest } = validated.data;
+
   const employee = await withGymScope(gymId, (db) =>
     db.employee.create({
-      data: { ...validated.data, gymId, passwordHash: bcrypt.hashSync(password, 10) },
+      data: {
+        ...rest,
+        gymId,
+        passwordHash: bcrypt.hashSync(password, 10),
+        locations: { connect: locationIds.map((id) => ({ id })) },
+      },
     }),
   );
 
@@ -92,7 +101,7 @@ export async function updateEmployeePerson(
     gender: formData.get("gender"),
     birthday: formData.get("birthday"),
     employeeSince: formData.get("employeeSince"),
-    locationId: formData.get("locationId"),
+    locationIds: formData.getAll("locationIds"),
     street: formData.get("street") || undefined,
     zip: formData.get("zip") || undefined,
     city: formData.get("city") || undefined,
@@ -106,8 +115,14 @@ export async function updateEmployeePerson(
     return { error: "Bitte alle Pflichtfelder prüfen." };
   }
 
+  const { locationIds, ...rest } = validated.data;
   const { gymId } = await getCurrentEmployee();
-  await withGymScope(gymId, (db) => db.employee.update({ where: { id }, data: validated.data }));
+  await withGymScope(gymId, (db) =>
+    db.employee.update({
+      where: { id },
+      data: { ...rest, locations: { set: locationIds.map((locId) => ({ id: locId })) } },
+    }),
+  );
   revalidatePath(`/employees/${id}`);
 }
 

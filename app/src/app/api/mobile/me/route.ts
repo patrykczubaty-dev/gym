@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { startOfWeek, endOfWeek } from "date-fns";
 import { getMobileCustomer } from "@/lib/mobile-auth";
 import { withGymScope } from "@/lib/scoped-prisma";
 
@@ -21,8 +22,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Kunde nicht gefunden." }, { status: 404 });
   }
 
+  // Fuer die Wochenpensum-Zeile im Profil (analog zum Start-Hero) - dasselbe
+  // Kontingent, hier nur zusaetzlich verfuegbar gemacht statt einen
+  // separaten Fetch im Profil-Screen zu brauchen.
+  const weeklyLimit = full.contract?.plan.weeklyLimit ?? null;
+  let usedThisWeek: number | null = null;
+  if (weeklyLimit !== null) {
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+    usedThisWeek = await withGymScope(customer.gymId, (db) =>
+      db.booking.count({
+        where: {
+          customerId: customer.id,
+          // Wartelistenplaetze zaehlen wie Buchungen gegen das Kontingent
+          // (siehe Absprache) - Events zaehlen nicht mit.
+          status: { in: ["BOOKED", "WAITLISTED"] },
+          calendarEvent: { startsAt: { gte: weekStart, lte: weekEnd }, courseId: { not: null } },
+        },
+      }),
+    );
+  }
+
   return NextResponse.json({
     profile: {
+      id: full.id,
       firstName: full.firstName,
       lastName: full.lastName,
       email: full.email,
@@ -32,6 +55,7 @@ export async function GET(request: NextRequest) {
       contractType: full.contractType,
       joinedAt: full.joinedAt,
     },
+    weeklyQuota: weeklyLimit === null ? null : { limit: weeklyLimit, usedThisWeek: usedThisWeek! },
     contract: full.contract
       ? {
           planName: full.contract.plan.name,

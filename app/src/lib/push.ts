@@ -10,12 +10,13 @@ export async function sendExpoPush(
   expoPushToken: string,
   title: string,
   body: string,
+  data?: Record<string, unknown>,
 ): Promise<void> {
   try {
     const response = await fetch(EXPO_PUSH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ to: expoPushToken, title, body, sound: "default" }),
+      body: JSON.stringify({ to: expoPushToken, title, body, sound: "default", data }),
     });
     if (!response.ok) {
       console.error(`[push] Expo-API antwortete mit HTTP ${response.status}`);

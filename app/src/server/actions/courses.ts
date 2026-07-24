@@ -15,6 +15,9 @@ const CourseSchema = z.object({
   participantLimit: z.coerce.number().int().min(1),
   trialPossible: z.coerce.boolean(),
   trialDate: z.coerce.date().optional().nullable(),
+  cancellationCutoffHours: z.coerce.number().int().min(0).optional().nullable(),
+  waitlistLimit: z.coerce.number().int().min(0).optional().nullable(),
+  durationMinutes: z.coerce.number().int().min(5).max(720).optional().nullable(),
   locationIds: z.array(z.string()).min(1, { error: "Bitte mindestens einen Standort wählen." }),
 });
 
@@ -26,6 +29,9 @@ function parse(formData: FormData) {
     participantLimit: formData.get("participantLimit"),
     trialPossible: formData.get("trialPossible") === "yes",
     trialDate: formData.get("trialDate") || null,
+    cancellationCutoffHours: formData.get("cancellationCutoffHours") || null,
+    waitlistLimit: formData.get("waitlistLimit") || null,
+    durationMinutes: formData.get("durationMinutes") || null,
     locationIds: formData.getAll("locationIds"),
   });
 }

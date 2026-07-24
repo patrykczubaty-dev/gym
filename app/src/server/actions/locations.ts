@@ -61,7 +61,7 @@ export async function deleteLocation(id: string): Promise<{ error?: string }> {
   const { gymId } = await verifySession();
 
   const customerCount = await withGymScope(gymId, (db) =>
-    db.customer.count({ where: { locationId: id } }),
+    db.customer.count({ where: { locations: { some: { id } } } }),
   );
 
   if (customerCount > 0) {

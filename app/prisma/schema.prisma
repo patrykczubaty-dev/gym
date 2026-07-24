@@ -100,8 +100,8 @@ model Location {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  customers      Customer[]
-  employees      Employee[]
+  customers      Customer[]      @relation("CustomerLocations")
+  employees      Employee[]      @relation("EmployeeLocations")
   courses        Course[]        @relation("CourseLocations")
   events         Event[]         @relation("EventLocations")
   calendarEvents CalendarEvent[]
@@ -118,8 +118,9 @@ model Employee {
   gender        String // Gender: w | m
   birthday      DateTime
   employeeSince DateTime
-  locationId    String
-  location      Location  @relation(fields: [locationId], references: [id])
+  // Mehrfachauswahl statt Einzel-Standort (analog zu Customer.locations) -
+  // ein Mitarbeiter kann z.B. an zwei Filialen unterrichten/arbeiten.
+  locations     Location[] @relation("EmployeeLocations")
   street        String?
   zip           String?
   city          String?
@@ -199,8 +200,14 @@ model Customer {
 
   status       String // CustomerStatus: ACTIVE | PAUSED | INACTIVE
   contractType String // ContractType: VOUCHER | CONTRACT | TRIAL
-  locationId   String
-  location     Location @relation(fields: [locationId], references: [id])
+  // Standort-Zuordnung ist bewusst kein einzelner Pflicht-Standort mehr,
+  // sondern Mehrfachauswahl (z.B. Mitglied trainiert an zwei Filialen) oder
+  // pauschal "alle Standorte" ueber allLocations - letzteres schliesst auch
+  // kuenftig neu angelegte Standorte automatisch mit ein, ohne dass Bestands-
+  // kunden nachgepflegt werden muessen. Bei allLocations=true bleibt
+  // `locations` leer/ungenutzt.
+  allLocations Boolean    @default(false)
+  locations    Location[] @relation("CustomerLocations")
   joinedAt     DateTime // Eintrittsdatum / "Beigetreten am"
 
   originTrialId String?
@@ -336,6 +343,13 @@ model Course {
   // stornierbar). Pro Kurs statt global, da Studios das je nach Auslastung/
   // Trainer-Vorlaufzeit unterschiedlich handhaben wollen.
   cancellationCutoffHours Int?
+  // null = globalen Standard aus Settings.defaultWaitlistLimit verwenden
+  // (siehe settings.ts). Ueberschreibt diesen fuer den einzelnen Kurs.
+  waitlistLimit Int?
+  // null = globalen Standard aus Settings.defaultCourseDurationMinutes
+  // verwenden. Dient nur als Vorbefuellung beim Anlegen neuer Kalendertermine
+  // fuer diesen Kurs - die Dauer bleibt pro Termin frei änderbar.
+  durationMinutes Int?
 
   locations          Location[]           @relation("CourseLocations")
   calendarEvents     CalendarEvent[]
@@ -473,6 +487,12 @@ model Settings {
 
   defaultNoticePeriodMonths Int @default(3)
   defaultAutoRenewalMonths  Int @default(3)
+
+  // Vorschlagswerte fuer neue Kurse - pro Kurs ueberschreibbar (siehe
+  // Course.waitlistLimit/durationMinutes). null bei defaultWaitlistLimit =
+  // Warteliste standardmaessig unbegrenzt.
+  defaultWaitlistLimit         Int?
+  defaultCourseDurationMinutes Int  @default(60)
 
   // Social-Media-API-Zugangsdaten (Verwendung: News-Veröffentlichung, siehe Systeme-Seite)
   facebookPageId             String?

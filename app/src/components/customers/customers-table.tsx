@@ -27,7 +27,7 @@ import { deleteCustomers } from "@/server/actions/customers";
 import { formatDateDe } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { CONTRACT_TYPE_LABELS } from "@/lib/enums";
-import { Trash2 } from "lucide-react";
+import { Trash2, Search } from "lucide-react";
 
 type Customer = {
   id: string;
@@ -37,9 +37,14 @@ type Customer = {
   contractType: string;
   photoUrl: string | null;
   joinedAt: Date;
-  locationId: string;
-  location: { city: string };
+  allLocations: boolean;
+  locations: { id: string; city: string }[];
 };
+
+function locationSummary(customer: Customer): string {
+  if (customer.allLocations) return "Alle Standorte";
+  return customer.locations.map((l) => l.city).join(", ") || "–";
+}
 
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: "Aktiv",
@@ -86,7 +91,8 @@ export function CustomersTable({
     const q = query.trim().toLowerCase();
     return customers.filter((c) => {
       if (statusFilter !== "ALLE" && c.status !== statusFilter) return false;
-      if (locationFilter !== "ALLE" && c.locationId !== locationFilter) return false;
+      if (locationFilter !== "ALLE" && !c.allLocations && !c.locations.some((l) => l.id === locationFilter))
+        return false;
       if (q && !`${c.firstName} ${c.lastName}`.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -114,12 +120,15 @@ export function CustomersTable({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Kunden suchen…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="max-w-xs flex-1"
-        />
+        <div className="relative max-w-xs flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Kunden suchen…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-8"
+          />
+        </div>
         {STATUS_FILTERS.map((s) => (
           <button
             key={s}
@@ -195,7 +204,7 @@ export function CustomersTable({
                         {customer.firstName} {customer.lastName}
                       </span>
                       <span className="block text-xs font-normal text-muted-foreground sm:hidden">
-                        {CONTRACT_TYPE_LABELS[customer.contractType as keyof typeof CONTRACT_TYPE_LABELS]} · {customer.location.city}
+                        {CONTRACT_TYPE_LABELS[customer.contractType as keyof typeof CONTRACT_TYPE_LABELS]} · {locationSummary(customer)}
                       </span>
                     </span>
                   </Link>
@@ -208,7 +217,7 @@ export function CustomersTable({
                 <TableCell className="hidden sm:table-cell">
                   {CONTRACT_TYPE_LABELS[customer.contractType as keyof typeof CONTRACT_TYPE_LABELS]}
                 </TableCell>
-                <TableCell className="hidden md:table-cell">{customer.location.city}</TableCell>
+                <TableCell className="hidden md:table-cell">{locationSummary(customer)}</TableCell>
                 <TableCell className="hidden font-mono text-muted-foreground lg:table-cell">
                   {formatDateDe(customer.joinedAt)}
                 </TableCell>

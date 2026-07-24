@@ -9,6 +9,13 @@ import { Send, Archive } from "lucide-react";
 export function NewsRowActions({ id, status }: { id: string; status: string }) {
   const [pending, startTransition] = useTransition();
 
+  // Archivierte News haben keine weitere Aktion (nicht mehr sendbar, schon
+  // archiviert) - "—" statt einer leeren Zelle, konsistent mit der "—"-
+  // Konvention fuer leere Werte anderswo in der App (z.B. Notizen-Spalten).
+  if (status === "ARCHIVED") {
+    return <div className="text-right text-muted-foreground">—</div>;
+  }
+
   return (
     <div className="flex justify-end gap-1">
       {status === "DRAFT" && (

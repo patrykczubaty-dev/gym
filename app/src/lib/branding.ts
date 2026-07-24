@@ -7,7 +7,7 @@ import { ensureReadableOnBackground } from "@/lib/core/contrast";
 // waere ein Vertrauensbruch (Nielsen: Konsistenz).
 
 export const DEFAULT_STUDIO_NAME = "BEEPLUS";
-export const DEFAULT_PRIMARY_COLOR = "#e2483d";
+export const DEFAULT_PRIMARY_COLOR = "#4A6FA0";
 export const DEFAULT_LOGIN_CLAIM =
   "Mitglieder, Kurse und Verträge — alles an einem Ort.";
 

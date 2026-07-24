@@ -27,7 +27,7 @@ export async function getMobileCustomer(
   const payload = await verifyCustomerToken(token);
   if (!payload) return null;
 
-  return withGymScope(payload.gymId, (db) =>
+  const customer = await withGymScope(payload.gymId, (db) =>
     db.customer.findUnique({
       where: { id: payload.customerId, gymId: payload.gymId },
       select: {
@@ -42,4 +42,13 @@ export async function getMobileCustomer(
       },
     }),
   );
+
+  // Wie beim geloeschten Datensatz (siehe Kommentar oben) gilt dasselbe fuer
+  // ein pausiertes/gekuendigtes Mitglied: der Token kann bis zu 30 Tage alt
+  // sein, der Status aber jederzeit neu gesetzt werden - ab hier verliert
+  // ein Kunde also SOFORT jeglichen App-Zugriff, sobald er nicht mehr
+  // "ACTIVE" ist, unabhaengig davon, ob der Token selbst noch gueltig waere.
+  if (!customer || customer.status !== "ACTIVE") return null;
+
+  return customer;
 }

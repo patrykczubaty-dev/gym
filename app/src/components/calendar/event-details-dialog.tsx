@@ -12,9 +12,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cancelBooking } from "@/server/actions/calendar";
-import { formatDateDe } from "@/lib/dates";
+import { formatEventRange } from "@/lib/dates";
 import type { OccupancyStatus } from "@/lib/enums";
 import { X } from "lucide-react";
+import { EditEventDialog } from "./edit-event-dialog";
+import { DeleteEventDialog } from "./delete-event-dialog";
 
 type Booking = {
   id: string;
@@ -23,21 +25,40 @@ type Booking = {
   customer: { firstName: string; lastName: string };
 };
 
+type Course = { id: string; title: string; participantLimit: number };
+type Location = { id: string; city: string };
+
 export function EventDetailsDialog({
+  eventId,
+  seriesId,
+  subjectType,
+  subjectId,
+  locationId,
   courseTitle,
   startsAt,
+  endsAt,
   locationCity,
   capacity,
   occupancy,
   bookings,
+  courses,
+  locations,
   children,
 }: {
+  eventId: string;
+  seriesId: string | null;
+  subjectType: "course" | "event";
+  subjectId: string;
+  locationId: string;
   courseTitle: string;
   startsAt: Date;
+  endsAt: Date;
   locationCity: string;
   capacity: number;
   occupancy: OccupancyStatus;
   bookings: Booking[];
+  courses: Course[];
+  locations: Location[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -62,12 +83,34 @@ export function EventDetailsDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{courseTitle}</DialogTitle>
+          <DialogTitle className="flex items-center justify-between gap-2 pr-8">
+            {courseTitle}
+            {/* Event-Termine sind nur lesend im Kalender sichtbar - Bearbeiten/
+                Loeschen laeuft fuer sie ausschliesslich ueber die Events-Seite
+                (Absprache: Kurse und Events nicht vermischen). */}
+            {subjectType === "course" && (
+              <div className="flex items-center gap-1">
+                <EditEventDialog
+                  event={{
+                    id: eventId,
+                    seriesId,
+                    subjectId,
+                    locationId,
+                    startsAt,
+                    endsAt,
+                    capacity,
+                  }}
+                  courses={courses}
+                  locations={locations}
+                  onSaved={() => setOpen(false)}
+                />
+                <DeleteEventDialog eventId={eventId} seriesId={seriesId} onDeleted={() => setOpen(false)} />
+              </div>
+            )}
+          </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          {formatDateDe(startsAt)},{" "}
-          {startsAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}{" "}
-          Uhr — {locationCity}
+          {formatEventRange(startsAt, endsAt)} — {locationCity}
         </p>
         <p className="text-sm">
           Belegung: {booked.length} / {capacity}{" "}
